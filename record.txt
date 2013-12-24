@@ -1,0 +1,3 @@
+7 11 15 19 23 27 10 9 13 12 31 21 16 22 24 17 25 26 query 20 query 18 query 35 14 query 39 28 29 30 query 32 33 34 query 36 37 38 query 6 8 query 4 5 query
+
+query(24-27) query(20-23) query(16-19) query(12-15) query(28-31) query(32-35) query(36-39) query(8-11) query(4-7)

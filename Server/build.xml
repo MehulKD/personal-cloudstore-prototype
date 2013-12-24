@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+	Ant build file for dropbox-like app server.
+	author: Piasy Xu
+	date:   Dec 14, 2013
+	DCST, Tsinghua University
+-->
+
+<project name="Server" default="3 manifest">
+	<!-- set attr -->
+	<property name="src.dir" 	value="src" />
+	<property name="reflib.dir" value="lib" />
+	<property name="result.dir" value="result" />
+	<property name="bin.dir" 	value="${result.dir}/bin" />
+	<property name ="jar.name"  value ="dropbox-like-app-server.jar" /> 
+	
+	<!-- clean -->
+	<target name="1 clean" description="Clean...">
+		<delete dir="${result.dir}" />
+		<delete file="${jar.name}" />
+	</target>
+	
+	<!-- compile -->
+	<target name="2 compile" depends="1 clean" description="Compile All...">
+		<mkdir dir="${bin.dir}" />
+		<javac srcdir="${src.dir}" destdir="${bin.dir}" encoding="UTF8" debug="off" optimize="on">
+			<classpath>  
+				<fileset dir="${reflib.dir}" includes="*.jar"/>
+	        </classpath>  
+	    </javac>
+	</target>
+
+	<!-- packet -->
+	<target  name ="3 manifest"  depends ="2 compile"  description="Prepare package..."> 
+		<!-- create a property containing all .jar files, prefix lib/, and seperated with a space --> 
+		<pathconvert  property ="libs.project"  pathsep =" "> 
+			<mapper> 
+				<chainedmapper> 
+					<!--  remove absolute path  --> 
+					<flattenmapper  /> 
+					<!--  add lib/ prefix  --> 
+					<globmapper  from ="*"  to ="lib/*" /> 
+				</chainedmapper> 
+			</mapper> 
+			<path> 
+				<!--  lib.home contains all jar files, in several subdirectories  --> 
+				<fileset  dir ="${reflib.dir}"> 
+					<include  name ="*.jar" /> 
+				</fileset> 
+			</path> 
+		</pathconvert> 
+		
+		<manifest file="MANIFEST.MF"> 
+				<attribute  name ="Built-By"  value ="Piasy Xu" /> 
+				<!--  finally, use the magically generated libs path  --> 
+				<attribute  name ="Class-Path"  value ="${libs.project}" /> 
+				<attribute  name ="Main-Class"  value ="driver/Driver"  /> 
+		</manifest> 
+		
+		<!--  create the jar 
+		<jar  destfile="${result.dir}/${jar.name}" basedir="${bin.dir}" manifest="MANIFEST.MF">
+			<fileset  dir ="${reflib.dir}"> 
+				<include name ="*.jar" /> 
+			</fileset> 
+		</jar> --> 
+	</target> 
+</project>
