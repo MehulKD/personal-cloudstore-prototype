@@ -11,98 +11,32 @@ package dao;
  * */
 public class FileEntry
 {
-	private long id;
-	private String owner;
-	private String path;
-	private String digest;
+	public long id;
+	public String filename;
+	public long size;
+	public int blockNum;
+	public String owner;
 	
 	/**
-	 * The default public constructor.
+	 * Another public constructor.
 	 * */
-	public FileEntry()
+	public FileEntry(String filename, long size, int blockNum, String owner)
 	{
-		
+		this.filename = filename;
+		this.size = size;
+		this.blockNum = blockNum;
+		this.owner = owner;
 	}
 	
 	/**
 	 * Another public constructor.
 	 * */
-	public FileEntry(String owner, String path, String digest)
-	{
-		this.owner = owner;
-		this.path = path;
-		this.digest = digest;
-	}
-	
-	/**
-	 * The public set method of id filed.
-	 * @param the id
-	 * */
-	public void setId(long id)
+	public FileEntry(long id, String filename, long size, int blockNum, String owner)
 	{
 		this.id = id;
-	}
-	
-	/**
-	 * The public get method of id filed.
-	 * @return the id
-	 * */
-	public long getId()
-	{
-		return this.id;
-	}
-	
-	/**
-	 * The public set method of owner filed.
-	 * @param the owner
-	 * */
-	public void setOwner(String owner)
-	{
+		this.filename = filename;
+		this.size = size;
+		this.blockNum = blockNum;
 		this.owner = owner;
-	}
-	
-	/**
-	 * The public get method of owner filed.
-	 * @return the owner
-	 * */
-	public String getOwner()
-	{
-		return this.owner;
-	}
-	
-	/**
-	 * The public set method of path filed.
-	 * @param the path
-	 * */
-	public void setPath(String path)
-	{
-		this.path = path;
-	}
-	
-	/**
-	 * The public get method of path filed.
-	 * @return the path
-	 * */
-	public String getPath()
-	{
-		return this.path;
-	}
-	
-	/**
-	 * The public set method of digest filed.
-	 * @param the digest
-	 * */
-	public void setDigest(String digest)
-	{
-		this.digest = digest;
-	}
-	
-	/**
-	 * The public get method digest id filed.
-	 * @return the digest
-	 * */
-	public String getDigest()
-	{
-		return this.digest;
 	}
 }

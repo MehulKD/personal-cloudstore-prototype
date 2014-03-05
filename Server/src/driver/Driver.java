@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-import util.Loger;
 import model.Constant;
 import model.Setting;
+import util.Loger;
 import controller.Controller;
 
 /**
@@ -28,10 +28,10 @@ public class Driver
 		Loger.Log(Constant.LOG_LEVEL_INFO, "Server start!", "Driver accept");
 		
 		boolean keepRunning = true;
-		
 		try
 		{
 			ServerSocket server = new ServerSocket(Setting.GATEWAY_PORT);
+			Loger.init(System.out, Constant.LEVEL_DEBUG);
 			
 			//keep listening and accepting clients' connect request.
 			while (keepRunning)
@@ -39,8 +39,8 @@ public class Driver
 				Socket client = server.accept();
 				if (client.getLocalPort() != -1 && client.getPort() != 0)
 				{
-					Loger.Log(Constant.LOG_LEVEL_INFO, "Accept a client at port " + 
-							  client.getLocalPort(), "Driver accept");
+					Loger.Log(Constant.LOG_LEVEL_INFO, "Accept a client at " 
+							+ client.getRemoteSocketAddress().toString(), "Driver accept");
 					Controller controller = new Controller(client);
 					controller.start();
 				}
@@ -53,5 +53,4 @@ public class Driver
 			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "Driver create server socket");
 		}
 	}
-
 }

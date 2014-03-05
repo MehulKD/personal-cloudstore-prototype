@@ -11,8 +11,8 @@ package com.piasy.client.model;
  * */
 public class Setting
 {
-	//public static final String SERVER_IP = "59.66.132.144";
-	public static final String SERVER_IP = "101.5.109.208";
-	//public static final String SERVER_IP = "166.111.134.210";
-	public static final int SERVER_PORT = 9221;
+	public static final String SERVER_IP = "59.66.132.144";
+//	public static final String SERVER_IP = "54.201.28.53";
+//	public static final String SERVER_IP = "192.168.0.100";
+	public static final int SERVER_PORT = 9898;
 }

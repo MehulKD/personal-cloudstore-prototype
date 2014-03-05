@@ -53,9 +53,12 @@ public class DBHelper extends SQLiteOpenHelper
 	@Override
 	public void onCreate(SQLiteDatabase db)
 	{
-		db.execSQL("CREATE TABLE IF NOT EXISTS " + Constant.DATABASE_TABLE_NAME +  
-                "(id INTEGER PRIMARY KEY AUTOINCREMENT, cloudPath TEXT, cloudDigest TEXT, localRecordTime INTEGER, localStatus INTEGER, " + 
-				"localPath TEXT, localModTime INTEGER, localSize INTEGER, localDigest TEXT)"); 
+		db.execSQL("CREATE TABLE IF NOT EXISTS " + Constant.DATABASE_FILE_TABLE_NAME +  
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT, cloudPath TEXT, cloudDigest TEXT, localRecordTime INT8, localStatus INTEGER, " + 
+				"localPath TEXT, localModTime INT8, localSize INT8, localDigest TEXT)"); 
+		
+		db.execSQL("CREATE TABLE IF NOT EXISTS " + Constant.DATABASE_BLOCK_TABLE_NAME +  
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT, status INTEGER, tag INTEGER, offset INTEGER, size INTEGER)"); 
 	}
 
 	/**

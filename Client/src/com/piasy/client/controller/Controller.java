@@ -1,31 +1,24 @@
 package com.piasy.client.controller;
 
 import java.io.File;
-import java.io.IOException;
-import java.net.Socket;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.annotation.SuppressLint;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.piasy.client.dao.DBManager;
-import com.piasy.client.dao.FileEntry;
 import com.piasy.client.model.Constant;
 import com.piasy.client.model.ControlChannel;
-import com.piasy.client.model.DataChannel;
-import com.piasy.client.model.Flag;
-import com.piasy.client.model.Setting;
+import com.piasy.client.model.Request;
 import com.piasy.client.model.TransferTask;
 
 /**
@@ -66,11 +59,23 @@ public class Controller
 		return instance;
 	}
 	
+	static Context context;
+	public static void setContext(Context cont)
+	{
+		context = cont;
+	}
+	
+	public static void makeToast(String text)
+	{
+		Toast.makeText(context, text, Toast.LENGTH_LONG).show();
+	}
+	
 	ControlChannel controlChannel = null;
-	String name = null;
+	String username = null;
 	Handler viewerHandler = null;
 	Thread controllerThread = null;
 	DBManager dbManager = null;
+	Queue<Request> requests = new LinkedList<Request>();
 	/**
 	 * Initialize the necessary modules of this application, including
 	 * the database manager, handler, and control channel. All the query
@@ -81,43 +86,94 @@ public class Controller
 	 * the database manager,
 	 * the name of this user
 	 * */
-	public boolean init(Handler viewerHandler, DBManager dbManager, String name)
+	public boolean init(Handler viewerHandler, DBManager dbManager, String username)
 	{
-		boolean ret = false;
-		this.name = name;
+		boolean ret = true;
+		this.username = username;
 		this.dbManager = dbManager;
 		this.viewerHandler = viewerHandler;
-		controlChannel = new ControlChannel(name, myHandler);
-		ret = controlChannel.init();
+		
+		File cloudDir = new File(Constant.APP_BASE_DIR);
+		cloudDir.mkdir();
+		File logDir = new File(Constant.APP_BASE_DIR + "/log");
+		logDir.mkdir();
+		File tmpDir = new File(Constant.TMP_DIR);
+		tmpDir.mkdir();
+				
 		if (ret)
 		{
 			controllerThread = new Thread(controllerRunnable);
 			controllerThread.start();
 			
 			if (this.dbManager != null && !this.dbManager.dbIsOpen())
-				this.dbManager.openDB();
-			
-			List<FileEntry> entries = dbManager.query();
-			for (int i = 0; i < entries.size(); i ++)
 			{
-				FileEntry entry = entries.get(i);
-				if (entry.localStatus == Constant.FILE_STATUS_UPLOAD_PARTLY)
-				{
-					upload(entry.localPath, entry.transferSize);
-				}
-				else
-				{
-					if (entries.get(i).localStatus == Constant.FILE_STATUS_DOWNLOAD_PARTLY)
-					{
-						//TODO keep download again
-					}
-				}
+				this.dbManager.openDB();
 			}
+			
+			
+//			List<BlockEntry> entries = dbManager.queryFromBlocks();
+//			//TO-DO for each filename, only re-request once...
+//			ArrayList<BlockEntry> reTransferBlocks = new ArrayList<BlockEntry>();
+//			for (int i = 0; i < entries.size(); i ++)
+//			{
+//				BlockEntry entry = entries.get(i);
+//				boolean unacked = (entry.tag == Constant.BLOCK_UPLOAD_UNACKED) ||
+//							   (entry.tag == Constant.BLOCK_DOWNLOAD_UNACKED) ||
+//							   (entry.tag == Constant.BLOCK_UPDATE_UP_UNACKED) ||
+//							   (entry.tag == Constant.BLOCK_UPDATE_DOWN_UNACKED);
+//				if (unacked)
+//				{
+//					boolean exist = false;
+//					int j = 0;
+//					for (j = 0; j < reTransferBlocks.size(); j ++)
+//					{
+//						if (entry.filename.equals(reTransferBlocks.get(j).filename))
+//						{
+//							exist = true;
+//							break;
+//						}
+//					}
+//					
+//					if (!exist)
+//					{
+//						reTransferBlocks.add(entry);
+//					}
+//					else
+//					{
+//						if (entry.tag < reTransferBlocks.get(j).tag)
+//						{
+//							reTransferBlocks.set(j, entry);
+//						}
+//					}
+//				}
+//			}
+//			
+//			for (int i = 0; i < reTransferBlocks.size(); i ++)
+//			{
+//				BlockEntry entry = reTransferBlocks.get(i);
+//				
+//				switch ((int) entry.status)
+//				{
+//				case Constant.BLOCK_UPLOAD_UNACKED:
+//					upload(entry.filename, entry.offset);
+//					break;
+//				case Constant.BLOCK_DOWNLOAD_UNACKED:
+//					//TODO keep download again
+//					break;
+//				case Constant.BLOCK_UPDATE_UP_UNACKED:
+//					//TODO keep update up again
+//					break;
+//				case Constant.BLOCK_UPDATE_DOWN_UNACKED:
+//					//TODO keep update down again
+//					break;
+//				default:
+//					break;
+//				}
+//			}
 		}
 		return ret;
 	}
 	
-	Flag exitFlag = null;
 	/**
 	 * The exit method, it will be called when user want to
 	 * exit this application. We also only note down this 
@@ -126,10 +182,12 @@ public class Controller
 	 * */
 	public void exit()
 	{
-		synchronized (exitFlag)
+		synchronized (requests)
 		{
-			exitFlag.setValue(true);
-			Log.d(Constant.LOG_LEVEL_DEBUG, "exit...");
+			dbManager.closeDB();
+			Request exit = new Request();
+			exit.type = Constant.REQUEST_TYPE_EXIT;
+			requests.offer(exit);
 		}
 	}
 	
@@ -139,7 +197,7 @@ public class Controller
 	 * */
 	public String getName()
 	{
-		return name;
+		return username;
 	}
 	
 	/**
@@ -159,55 +217,223 @@ public class Controller
 	 * */
 	public void query()
 	{
-		synchronized (queryFlag)
+		synchronized (requests)
 		{
-			queryFlag.setValue(true);
-			Log.d(Constant.LOG_LEVEL_DEBUG, "get query");
+			Request query = new Request();
+			query.type = Constant.REQUEST_TYPE_QUERY;
+			requests.offer(query);
 		}
 	}
 	
-	ArrayList<String> uploadFileName = new ArrayList<String>();
-	ArrayList<Long> uploadOffset = new ArrayList<Long>();
-	ArrayList<Boolean> requested = new ArrayList<Boolean>();	//look for this list to find the first unrequested file
-	Flag uploadFlag = null;
 	/**
 	 * The upload method, just note down that the user has made
 	 * a upload request, and save the file(s) name to be sent,
 	 * and it will be processed in the controller's own thread. 
 	 * After the upload, controller will make a query request
 	 * itself, and than the viewer could update the cloud file
-	 * information.
-	 * TODO change to files someday in the future.
-	 * @param file(s) name
+	 * information. If there are many files to upload, call this
+	 * method one by one.
+	 * @param params : upload params
+	 * {
+	 * "files" : [
+	 * 				{
+	 * 				"filename" : filename
+	 * 				} ...
+	 * 		     ]
+	 * }
 	 * */
-	public void upload(String filename, long offset)
+	public void upload(JSONObject params)
 	{
-		synchronized (uploadFlag)
+		synchronized (requests)
 		{
-			synchronized (uploadFileName)
-			{
-				uploadFileName.add(filename);
-			}
-			synchronized (uploadOffset)
-			{
-				uploadOffset.add(Long.valueOf(offset));
-			}
-			synchronized (requested)
-			{
-				requested.add(Boolean.valueOf(false));
-			}
-			uploadFlag.setValue(true);
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_UPLOAD;
+			upload.params = params;
+			requests.offer(upload);
+		}
+	}
+
+	public void pureUpload(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_PURE_UPLOAD;
+			upload.params = params;
+			requests.offer(upload);
 		}
 	}
 	
+	public void pureDownload(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_PURE_DOWNLOAD;
+			upload.params = params;
+			requests.offer(upload);
+		}
+	}
+	
+	public void updateUp(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_UPDATE_UP;
+			upload.params = params;
+			requests.offer(upload);
+		}
+	}
+	
+	public void updateUpFast(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_UPDATE_UP_FAST;
+			upload.params = params;
+			requests.offer(upload);
+		}
+	}
+	
+	public void updateDown(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request upload = new Request();
+			upload.type = Constant.REQUEST_TYPE_UPDATE_DOWN;
+			upload.params = params;
+			requests.offer(upload);
+		}
+	}
+	
+	/**
+	 * The download method, just note down that the user has made
+	 * a download request, and save the file(s) name to be sent,
+	 * and it will be processed in the controller's own thread. 
+	 * If there are many files to download, call this
+	 * method one by one.
+	 * @param params : download params, the same format as upload
+	 * */
+	public void download(JSONObject params)
+	{
+		synchronized (requests)
+		{
+			Request download = new Request();
+			download.type = Constant.REQUEST_TYPE_DOWNLOAD;
+			download.params = params;
+			requests.offer(download);			
+		}
+	}
+	
+	public void parseResponse(String rcvStr)
+	{
+		try
+		{
+			JSONObject response = new JSONObject(rcvStr);
+			String type = response.getString("type");
+			
+			if (type.equals("query"))
+			{
+				Message msg = Message.obtain();
+				msg.obj = rcvStr;	//TODO add some information
+				synchronized (viewerHandler)
+				{
+					viewerHandler.sendMessage(msg);
+				}
+			}
+			else
+			{
+				
+			}
+		}
+		catch (JSONException e)
+		{
+			if (e.getMessage() != null)
+				Log.e(Constant.LOG_LEVEL_ERROR, "at controller parseResponse : " + e.getMessage());
+			else
+				Log.e(Constant.LOG_LEVEL_ERROR, "at controller parseResponse : JSONException");
+		}
+	}
+	
+	public void transferFinish()
+	{
+		synchronized (runningTasks)
+		{
+			for (int i = 0; i < runningTasks.size(); i ++)
+			{
+				if (runningTasks.get(i).finished())
+				{
+					runningTasks.remove(i);
+					break;
+				}
+			}
+			
+			synchronized (waitingTasks)
+			{
+				while (!waitingTasks.isEmpty() 
+						&& (runningTasks.size() < Constant.CHANNEL_POOL_SIZE))
+				{
+					TransferTask task = waitingTasks.poll();
+					task.start();
+					runningTasks.add(task);
+				}
+			}
+		}
+	}
+	
+	public void transferFileFinish(String filename, int mode)
+	{
+		try
+		{
+			JSONObject info = new JSONObject();
+			switch (mode)
+			{
+			case Constant.TRANSFER_MODE_DOWNLOAD:
+			case Constant.TRANSFER_MODE_UPDATE_DOWN:
+			case Constant.TRANSFER_MODE_PURE_DOWNLOAD:
+				info.put("type", "download");
+				break;
+			case Constant.TRANSFER_MODE_UPLOAD:
+			case Constant.TRANSFER_MODE_UPDATE_UP:
+			case Constant.TRANSFER_MODE_PURE_UPLOAD:
+			case Constant.TRANSFER_MODE_UPDATE_UP_FAST:
+				info.put("type", "upload");
+				break;
+			default:
+				break;
+			}
+			info.put("filename", filename);
+			info.put("status", "success");
+			Message msg = Message.obtain();
+			msg.obj = info.toString();
+			Log.d(Constant.LOG_LEVEL_DEBUG, info.toString());
+			synchronized (viewerHandler)
+			{
+				viewerHandler.sendMessage(msg);
+			}
+		}
+		catch (JSONException e)
+		{
+			if (e.getMessage() != null)
+				Log.e(Constant.LOG_LEVEL_ERROR, "at controller transferFileFinish : " + e.getMessage());
+			else
+				Log.e(Constant.LOG_LEVEL_ERROR, "at controller transferFileFinish : JSONException");
+		}
+	}
+	
+	int dataport;
+	public void setDataPort(int port)
+	{
+		dataport = port;
+	}
+	
+	//the queue of transfer tasks
+	Queue<TransferTask> waitingTasks = new LinkedList<TransferTask>();
+	ArrayList<TransferTask> runningTasks = new ArrayList<TransferTask>();
 	
 	boolean keepRunning = true;
-	Flag queryFlag = null;
-	Flag transferFlag = null;
-	ArrayList<DataChannel> channels = new ArrayList<DataChannel>();		//the list of channel
-	Queue<TransferTask> tasks = new LinkedList<TransferTask>();			//the queue of transfer tasks
-	ArrayList<TransferTask> bufferedTasks = new ArrayList<TransferTask>();	//the tasks to be acked
-	int streamTag = 0;
 	Runnable controllerRunnable = new Runnable()
 	{
 		/**
@@ -220,432 +446,116 @@ public class Controller
 		@Override
 		public void run()
 		{
-			controlChannel.sentInitInfo();
+			controlChannel = new ControlChannel(username);
+			if(controlChannel.init())
+			{
+				Message msg = Message.obtain();
+				JSONObject info = new JSONObject();
+				try
+				{
+					info.put("type", "init");
+					info.put("status", "success");
+					msg.obj = info.toString();
+					synchronized (viewerHandler)
+					{
+						viewerHandler.sendMessage(msg);
+					}
+				}
+				catch (JSONException e)
+				{
+					e.printStackTrace();
+				}
+			}
+			else
+			{
+				Message msg = Message.obtain();
+				JSONObject info = new JSONObject();
+				try
+				{
+					info.put("type", "init");
+					info.put("status", "fail");
+					msg.obj = info.toString();
+					synchronized (viewerHandler)
+					{
+						viewerHandler.sendMessage(msg);
+					}
+				}
+				catch (JSONException e)
+				{
+					e.printStackTrace();
+				}
+				
+				return;
+			}
+			
 			while (keepRunning)
 			{
-				synchronized (queryFlag)
+				synchronized (requests)
 				{
-					//process the query transaction
-					if (queryFlag.getValue())
+					if (!requests.isEmpty())
 					{
-						Log.d(Constant.LOG_LEVEL_DEBUG, "handle query");
-						controlChannel.query();
-						queryFlag.setValue(false);
-						
-						//find the task that has finished, send the message to server and remove this task
-						//from buffer area
-						synchronized (tasks)
+						Request request = requests.poll();
+						switch (request.type)
 						{
-							for (int i = 0; i < bufferedTasks.size(); i ++)
+						case Constant.REQUEST_TYPE_QUERY:
+							controlChannel.query();
+							break;
+						case Constant.REQUEST_TYPE_UPLOAD:
+						case Constant.REQUEST_TYPE_DOWNLOAD:
+						case Constant.REQUEST_TYPE_PURE_DOWNLOAD:
+						case Constant.REQUEST_TYPE_UPDATE_UP:
+						case Constant.REQUEST_TYPE_UPDATE_DOWN:
+						case Constant.REQUEST_TYPE_PURE_UPLOAD:
+						case Constant.REQUEST_TYPE_UPDATE_UP_FAST:
+							try
 							{
-								if (bufferedTasks.get(i).finished())
+								ArrayList<String> files = new ArrayList<String>();
+								JSONArray filesInfo = request.params.getJSONArray("files");
+								for (int i = 0; i < filesInfo.length(); i ++)
 								{
-									controlChannel.sendTransferFinishInfo(bufferedTasks.get(i).getFileName());
-									bufferedTasks.remove(i);
+									files.add(filesInfo.getJSONObject(i).getString("filename"));
 								}
-							}
-						}
-					}
-				}
-				
-				synchronized (exitFlag)
-				{
-					//stop controller's thread, control channel's thread, stop
-					//all transfer in data channels.
-					if (exitFlag.getValue())
-					{
-						Log.d(Constant.LOG_LEVEL_DEBUG, "realy exit...");
-						controlChannel.exit();
-						exitFlag.setValue(false);
-						keepRunning = false;
-						for (int i = 0; i < channels.size(); i ++)
-						{
-							channels.get(i).stopMe();
-							channels.remove(i);
-						}
-					}
-				}
-				
-				synchronized (uploadFlag)
-				{
-					//process the upload transaction
-					if (uploadFlag.getValue())
-					{
-						int index = -1;
-						synchronized (requested)
-						{
-							for (int i = 0; i < requested.size(); i ++)
-							{
-								if (!requested.get(i).booleanValue())
+								//TODO split files into more tasks
+								TransferTask task = new TransferTask(request.type, 
+										files, false, dataport);
+								synchronized (runningTasks)
 								{
-									index = i;
-									break;
-								}
-							}
-						}
-						
-						synchronized (uploadFileName)
-						{
-							if ((0 <= index) && (index < uploadFileName.size()))
-							{
-								if (!controlChannel.upload(uploadFileName.get(index)))
-								{
-									Message msg = Message.obtain();
-									JSONObject err = new JSONObject();
-									try
+									if (runningTasks.size() < Constant.CHANNEL_POOL_SIZE)
 									{
-										err.put("type", "error");
-										err.put("status", "Send upload request failed!");
-										msg.obj = err.toString();
-										synchronized (viewerHandler)
-										{
-											viewerHandler.sendMessage(msg);
-										}
+										task.start();
+										runningTasks.add(task);
 									}
-									catch (JSONException e)
-									{
-										if (e.getMessage() != null)
-											Log.e(Constant.LOG_LEVEL_ERROR, "at Controller upload : " + e.getMessage());
-										else
-											Log.e(Constant.LOG_LEVEL_ERROR, "at Controller upload : JSONException");
-									}
-								}
-								else
-								{
-									synchronized (requested)
-									{
-										requested.set(index, Boolean.valueOf(true));
-									}
-								}
-							}
-						}
-						
-						synchronized (requested)
-						{
-							if ((index < 0) || (requested.size() <= index))
-							{
-								uploadFlag.setValue(false);
-							}
-						}
-					}
-				}
-				
-				synchronized (transferFlag)
-				{
-					//process the transfer transaction, this transaction won't be
-					//ordered by user, it is a part of our file transfer protocol.
-					if (transferFlag.getValue())
-					{
-						try
-						{
-							synchronized (tasks)
-							{
-								if (!tasks.isEmpty())
-								{
-									DataChannel channel = null;
-									//new a channel if the pool is not full
-									if (channels.size() < Constant.CHANNEL_POOL_SIZE)
-									{
-										Socket socket = new Socket(Setting.SERVER_IP, tasks.peek().transferPort());	//TO-DO validate this is the right value?
-										channel = new DataChannel(socket);
-									}
-									//otherwise search for a free channel
 									else
 									{
-										for (int i = 0; i < channels.size(); i ++)
+										synchronized (waitingTasks)
 										{
-											if (channels.get(i).free())
-											{
-												channels.remove(i);
-												Socket socket = new Socket(Setting.SERVER_IP, tasks.peek().transferPort());	//TO-DO validate this is the right value?
-												channel = new DataChannel(socket);
-												break;
-											}
+											waitingTasks.offer(task);
 										}
 									}
-									//otherwise, do nothing
-									
-									if (channel != null)
-									{
-										switch (tasks.peek().mode())
-										{
-										case Constant.TRANSFER_MODE_UPLOAD:
-											channel.upload(tasks.peek().nextBlock(streamTag));
-											streamTag ++;
-											channels.add(channel);
-											break;
-										case Constant.TRANSFER_MODE_DOWNLOAD:
-											
-											break;
-										case Constant.TRANSFER_MODE_UPDATE_UP:
-											
-											break;
-										case Constant.TRANSFER_MODE_UPDATE_DOWN:
-											
-											break;
-										default:
-											break;
-										}
-										
-										if (!tasks.peek().hasNextBlock())
-										{
-											bufferedTasks.add(tasks.poll());
-										}
-									}
-								}
-								
-								if (tasks.isEmpty())
-								{
-									transferFlag.setValue(false);
 								}
 							}
-						}
-						catch (UnknownHostException e)
-						{
-							if (e.getMessage() != null)
-								Log.e(Constant.LOG_LEVEL_ERROR, "at Controlle transfer : " + e.getMessage());
-							else
-								Log.e(Constant.LOG_LEVEL_ERROR, "at Controlle transfer : UnknownHostException");
-						}
-						catch (IOException e)
-						{
-							if (e.getMessage() != null)
-								Log.e(Constant.LOG_LEVEL_ERROR, "at Controlle transfer : " + e.getMessage());
-							else
-								Log.e(Constant.LOG_LEVEL_ERROR, "at Controlle transfer : IOException");
+							catch (JSONException e)
+							{
+								if (e.getMessage() != null)
+									Log.e(Constant.LOG_LEVEL_ERROR, "at controller run : " + e.getMessage());
+								else
+									Log.e(Constant.LOG_LEVEL_ERROR, "at controller run : JSONException");
+							}
+							break;
+						case Constant.REQUEST_TYPE_EXIT:
+							
+							break;
+						default:
+							break;
 						}
 					}
 				}
+
 			}
 		}
 	};
-	
-	@SuppressLint("HandlerLeak")
-	Handler myHandler = new Handler()
-	{
-		/**
-		 * Controller's handler, it will receive the message from
-		 * models, and process them, or transmit them to viewer.
-		 * */
-		public void handleMessage(Message msg)
-		{
-			try
-			{
-				JSONObject info = new JSONObject((String) msg.obj);
-				Log.d(Constant.LOG_LEVEL_DEBUG, "receive response at controller :" + info.toString());
-				String type = info.getString("type");
-				
-				//query response from server, update local database
-				//and transmit it to viewer.
-				if (type.equals("query"))
-				{
-					Message outMSG = Message.obtain();
-					outMSG.obj = msg.obj;
-					synchronized (viewerHandler)
-					{
-						viewerHandler.sendMessage(outMSG);
-					}
-					
-					try
-					{
-						//TODO update local database properly
-						JSONArray content = info.getJSONArray("content");
-						for (int i = 0; i < content.length(); i ++)
-						{
-							JSONObject item = content.getJSONObject(i);
-							
-							List<FileEntry> files = dbManager.query();
-							for (int j = 0; j < files.size(); j ++)
-							{
-								FileEntry tmp = files.get(j);
-								if (tmp.cloudPath.equals(item.getString("path")))
-								{
-									if (tmp.localDigest.equals(item.getString("digest")))
-									{
-										FileEntry file = new FileEntry(tmp.id, item.getString("path"), item.getString("digest"), 
-													item.getInt("modtime"), Constant.FILE_STATUS_SYNCED, item.getLong("size"), 
-													tmp.localPath, tmp.localModTime, tmp.localSize, tmp.localDigest);
-										dbManager.update(file);
-									}
-									else
-									{
-										//TODO do something
-									}
-									break;
-								}
-							}
-						}
-						
-					}
-					catch (JSONException e)
-					{
-						if (e.getMessage() != null)
-							Log.e(Constant.LOG_LEVEL_ERROR, "at Controller query : " + e.getMessage());
-						else
-							Log.e(Constant.LOG_LEVEL_ERROR, "at Controller query : JSONException");
-					}
-				}
-				else
-				{
-					//upload response from server
-					if (type.equals("upload"))
-					{
-						//keep uploading
-						if (info.getString("action").equals("upload"))
-						{
-							int port = info.getInt("port");
-							
-							synchronized (transferFlag)
-							{
-								transferFlag.setValue(true);
-								//TODO make sure copy of ref?
-								//now work file, but really? need to do a fully test.
-								synchronized (tasks)
-								{
-									String filename = info.getString("filename");
-									File file = new File(filename);
-									int index = -1;
-									synchronized (uploadFileName)
-									{
-										for (int i = 0; i < uploadFileName.size(); i ++)
-										{
-											if (uploadFileName.get(i).equals(filename))
-											{
-												index = i;
-												uploadFileName.remove(i);
-												break;
-											}
-										}
-									}
-																		
-									synchronized (uploadOffset)
-									{
-										if ((0 <= index) && (index < uploadOffset.size()))
-										{
-											tasks.offer(new TransferTask(file, uploadOffset.get(index), port, Constant.TRANSFER_MODE_UPLOAD));
-											uploadOffset.remove(index);
-											synchronized (requested)
-											{
-												requested.remove(index);
-											}
-										}
-									}
-								}
-								Log.d(Constant.LOG_LEVEL_DEBUG, "prepare to transfer");
-							}
-						}
-						else
-						{
-							//there is a copy of my file on cloud, we needn't upload
-							if (info.getString("action").equals("success"))
-							{
-								Message outMSG = Message.obtain();
-								JSONObject msgJsonObject = new JSONObject();
-								msgJsonObject.put("type", "upload");
-								msgJsonObject.put("status", "success");
-								outMSG.obj = msgJsonObject.toString();
-								synchronized (viewerHandler)
-								{
-									viewerHandler.sendMessage(outMSG);
-								}
-							}
-						}
-					}
-					else
-					{
-						if (type.equals("download"))
-						{
-							
-						}
-						else
-						{
-							if (type.equals("update"))
-							{
-								
-							}
-							else
-							{
-								if (type.equals("ack"))
-								{
-									//TO-DO process ack
-									synchronized (tasks)
-									{
-										if (!tasks.isEmpty())
-										{
-											tasks.peek().ack(info.getInt("tag"));
-										}
-										
-										//a task will be moved to buffer area immediately after
-										//it's last block is transferred, so after ack, only task
-										//in buffer area may be finished.
-									}
-									synchronized (bufferedTasks)
-									{
-										for (int i = 0; i < bufferedTasks.size(); i ++)
-										{
-											bufferedTasks.get(i).ack(info.getInt("tag"));
-											
-											if (bufferedTasks.get(i).finished())
-											{
-												Message outMSG = Message.obtain();
-												JSONObject msgJsonObject = new JSONObject();
-												
-												switch (bufferedTasks.get(i).mode())
-												{
-												case Constant.TRANSFER_MODE_UPLOAD:
-													msgJsonObject.put("type", "upload");
-													break;
-												case Constant.TRANSFER_MODE_DOWNLOAD:
-													msgJsonObject.put("type", "download");
-													break;
-												case Constant.TRANSFER_MODE_UPDATE_UP:
-													msgJsonObject.put("type", "upload");
-													break;
-												case Constant.TRANSFER_MODE_UPDATE_DOWN:
-													msgJsonObject.put("type", "download");
-													break;
-												default:
-													break;
-												}
-												
-												msgJsonObject.put("status", "success");
-												outMSG.obj = msgJsonObject.toString();
-												synchronized (viewerHandler)
-												{
-													viewerHandler.sendMessage(outMSG);
-												}
-												//bufferedTasks.remove(i);
-												query();
-											}
-										}
-									}
-									Log.d(Constant.LOG_LEVEL_DEBUG, "receive ack : tag = " + info.getInt("tag"));
-								}
-								else
-								{
-									//nothing
-								}
-							}
-						}
-					}
-				}
-			}
-			catch (JSONException e)
-			{
-				if (e.getMessage() != null)
-					Log.e(Constant.LOG_LEVEL_ERROR, "at MainActivity Handler : " + e.getMessage());
-				else
-					Log.e(Constant.LOG_LEVEL_ERROR, "at MainActivity Handler : JSONException");
-			}
-		}		
-	};
-	
-	
+		
 	private Controller()
 	{
-		queryFlag = new Flag(false);
-		uploadFlag = new Flag(false);
-		transferFlag = new Flag(false);
-		exitFlag = new Flag(false);
 	}
 }

@@ -11,5 +11,5 @@ package model;
  * */
 public class Setting
 {
-	public static final int GATEWAY_PORT = 9221;
+	public static final int GATEWAY_PORT = 9898;
 }

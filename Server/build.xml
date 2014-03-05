@@ -31,7 +31,7 @@
 	    </javac>
 	</target>
 
-	<!-- packet -->
+	<!-- manifest -->
 	<target  name ="3 manifest"  depends ="2 compile"  description="Prepare package..."> 
 		<!-- create a property containing all .jar files, prefix lib/, and seperated with a space --> 
 		<pathconvert  property ="libs.project"  pathsep =" "> 
@@ -57,12 +57,15 @@
 				<attribute  name ="Class-Path"  value ="${libs.project}" /> 
 				<attribute  name ="Main-Class"  value ="driver/Driver"  /> 
 		</manifest> 
-		
-		<!--  create the jar 
-		<jar  destfile="${result.dir}/${jar.name}" basedir="${bin.dir}" manifest="MANIFEST.MF">
+	</target> 	
+	
+	<!-- package
+	<target  name ="4 package"  depends ="3 manifest"  description="package..."> --> 
+		<!--  create the jar  
+		<jar  destfile="${jar.name}" basedir="${bin.dir}" manifest="MANIFEST.MF">
 			<fileset  dir ="${reflib.dir}"> 
 				<include name ="*.jar" /> 
 			</fileset> 
-		</jar> --> 
-	</target> 
+		</jar>
+	</target> --> 
 </project>

@@ -17,7 +17,6 @@ public class FileEntry
 	public String cloudDigest;
 	public long localRecordTime;
 	public long localStatus;
-	public long transferSize;
 	public String localPath;
 	public long localModTime;
 	public long localSize;
@@ -35,13 +34,12 @@ public class FileEntry
 	 * Another public constructor.
 	 * */
 	public FileEntry(String cloudPath, String cloudDigest, long localRecordTime,
-			long localStatus, long transferSize, String localPath, long localModTime,
+			long localStatus, String localPath, long localModTime,
 			long localSize, String localDigest)
 	{
 		this.cloudPath = cloudPath;
 		this.cloudDigest = cloudDigest;
 		this.localRecordTime = localRecordTime;
-		this.transferSize = transferSize;
 		this.localStatus = localStatus;
 		this.localPath = localPath;
 		this.localModTime = localModTime;
@@ -53,14 +51,13 @@ public class FileEntry
 	 * Another public constructor with id.
 	 * */
 	public FileEntry(int id, String cloudPath, String cloudDigest, long localRecordTime,
-			long localStatus, long transferSize, String localPath, long localModTime,
+			long localStatus, String localPath, long localModTime,
 			long localSize, String localDigest)
 	{
 		this.id = id;
 		this.cloudPath = cloudPath;
 		this.cloudDigest = cloudDigest;
 		this.localRecordTime = localRecordTime;
-		this.transferSize = transferSize;
 		this.localStatus = localStatus;
 		this.localPath = localPath;
 		this.localModTime = localModTime;

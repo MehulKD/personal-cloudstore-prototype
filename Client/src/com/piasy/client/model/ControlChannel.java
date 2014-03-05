@@ -1,7 +1,6 @@
 package com.piasy.client.model;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -11,13 +10,9 @@ import java.net.UnknownHostException;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import com.piasy.client.controller.Controller;
-import com.piasy.client.dao.DBManager;
-import com.piasy.client.dao.FileEntry;
-
-import android.os.Handler;
-import android.os.Message;
 import android.util.Log;
+
+import com.piasy.client.controller.Controller;
 
 /**
  * <p>This class is the control channel between server 
@@ -42,17 +37,15 @@ public class ControlChannel
 	Socket socket = null;
 	BufferedReader is = null;
 	PrintWriter os = null;
-	Handler controllerHandler = null;
 	Controller myController = null;
 	
 	/**
 	 * The public constructor client name.
 	 * @param the name of this client
 	 * */
-	public ControlChannel(String name, Handler controllerHandler)
+	public ControlChannel(String name)
 	{
 		this.name = name;
-		this.controllerHandler = controllerHandler;
 		myController = Controller.getController();
 	}
 	
@@ -67,6 +60,8 @@ public class ControlChannel
 			socket = new Socket(Setting.SERVER_IP, Setting.SERVER_PORT);
 			is = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 			os = new PrintWriter(socket.getOutputStream());
+			
+			sentInitInfo();
 			
 			Thread listeningThread = new Thread(listenRunnable);
 			listeningThread.start();
@@ -104,14 +99,26 @@ public class ControlChannel
 			os.println(initInfo.toString());
 			os.flush();
 			
+			String rcvStr = is.readLine();
+			JSONObject response = new JSONObject(rcvStr);
+			int dataPort = response.getInt("port");
+			myController.setDataPort(dataPort);
+			
 			Log.i(Constant.LOG_LEVEL_INFO, "send init info : " + initInfo.toString());
 		}
 		catch (JSONException e)
 		{
 			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : " + e.getMessage());
+				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : " + e.getMessage());
 			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : JSONException");
+				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : JSONException");
+		}
+		catch (IOException e)
+		{
+			if (e.getMessage() != null)
+				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : " + e.getMessage());
+			else
+				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : IOException");
 		}
 	}
 	
@@ -139,35 +146,6 @@ public class ControlChannel
 				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel query : " + e.getMessage());
 			else
 				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel query : JSONException");
-		}
-	}
-	
-	/**
-	 * When all blocks of a file(task) have been acknowledged,
-	 * client will notify server to close the data channel, and
-	 * stop the listening thread.
-	 * @param the finished file name.
-	 * */
-	public void sendTransferFinishInfo(String filename)
-	{
-		JSONObject queryInfo = new JSONObject();
-		
-		try
-		{
-			queryInfo.put("type", "finish");
-			queryInfo.put("filename", filename);
-			
-			os.println(queryInfo.toString());
-			os.flush();
-			
-			Log.i(Constant.LOG_LEVEL_INFO, "send finish info : " + queryInfo.toString());
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel send finish info : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel send finish info : JSONException");
 		}
 	}
 	
@@ -214,43 +192,33 @@ public class ControlChannel
 	 * file need to be transferred. And add a record to the local database.
 	 * @param name of the file to be uploaded.
 	 * */
-	public boolean upload(String filename)
+	public boolean upload(JSONObject uploadInfo)
 	{
 		boolean ret = false;
-		JSONObject uploadInfo = new JSONObject();
+		os.println(uploadInfo.toString());
+		os.flush();
+		ret = true;		
+		return ret;
+	}
+	
+	/**
+	 * Send download request to server, including the file name, 
+	 * @param filename : name of the file to be uploaded, in format
+	 * of username/filename
+	 * */
+	public boolean download(String filename)
+	{
+		boolean ret = false;
+		JSONObject downloadInfo = new JSONObject();
 		try
 		{
-			File upFile = new File(filename);
-			String digest = IndexModel.getMD5(upFile);
+			downloadInfo.put("type", "download");
+			downloadInfo.put("filename", filename);
 			
-			if (digest != null)
-			{
-				int index = 0;
-				for (index = filename.length() - 1; 0 <= index; index --)
-					if (filename.charAt(index) == '/')
-						break;
-				//in server, the file will be stored in the folder named as the user name,
-				//and keep the original file name.
-				String cloudPath = myController.getName() + "/" + filename.substring(index + 1);
-				
-				FileEntry entry = new FileEntry(cloudPath, digest, 0, Constant.FILE_STATUS_UPLOAD_PARTLY, 0,
-								upFile.getAbsolutePath(), upFile.lastModified(), upFile.length(), digest);
-				DBManager dbManager = myController.getDbManager();
-				synchronized (dbManager)
-				{
-					dbManager.insert(entry);
-				}
-				
-				uploadInfo.put("type", "upload");
-				uploadInfo.put("filename", upFile.getAbsolutePath());
-				uploadInfo.put("filesize", upFile.length());
-				uploadInfo.put("digest", digest);
-				
-				os.println(uploadInfo.toString());
-				os.flush();
-				
-				ret = true;
-			}
+			os.println(downloadInfo.toString());
+			os.flush();
+			
+			ret = true;
 		}
 		catch (JSONException e)
 		{
@@ -285,9 +253,7 @@ public class ControlChannel
 						//TO-DO parse message here and notify controller
 						//just transmit it to controller.
 						Log.i(Constant.LOG_LEVEL_INFO, "receive reply : " + rcvStr);
-						Message msg = Message.obtain();
-						msg.obj = rcvStr;
-						controllerHandler.sendMessage(msg);						
+						myController.parseResponse(rcvStr);						
 					}
 					//The receive String is null means that this connection is broken.
 					else

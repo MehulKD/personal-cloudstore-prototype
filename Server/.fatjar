@@ -1,0 +1,14 @@
+#Fat Jar Configuration File
+#Thu Jan 30 13:14:28 CST 2014
+onejar.license.required=false
+manifest.classpath=
+manifest.removesigners=true
+onejar.checkbox=true
+jarname=dropbox-like-app-server.jar
+manifest.mergeall=true
+manifest.mainclass=driver.Driver
+manifest.file=<createnew>
+jarname.isextern=false
+onejar.expand=
+excludes=
+includes=

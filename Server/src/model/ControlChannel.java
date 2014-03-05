@@ -37,6 +37,7 @@ public class ControlChannel
 	PrintWriter os = null;
 	Controller myController = null;
 	int localPort;
+	int dataPort;
 	
 	/**
 	 * The public constructor, setting the control channel socket,
@@ -45,11 +46,12 @@ public class ControlChannel
 	 * control channel socket,
 	 * the reference of controller
 	 * */
-	public ControlChannel(Socket controlSocket, Controller myController)
+	public ControlChannel(Socket controlSocket, Controller myController, int dataPort)
 	{
 		this.controlSocket = controlSocket;
 		localPort = controlSocket.getLocalPort();
 		this.myController = myController;
+		this.dataPort = dataPort;
 	}
 	
 	/**
@@ -67,20 +69,6 @@ public class ControlChannel
 			String rcvStr = is.readLine();
 			
 			//We assume that once a packet has been received, it is accurate.
-			/*boolean legalMSG = rcvInfo != null && rcvInfo.has("type") && 
-					   		   rcvInfo.getString("type").equals("init") &&
-					   		   rcvInfo.has("name") && rcvInfo.getString("name") != null;
-			
-			if (legalMSG)
-			{
-				myController.assignName(rcvInfo.getString("name"));
-				ret = true;
-			}
-			else
-			{
-				Loger.Log(Constant.LOG_LEVEL_WARNING, "Receive illegal message from client: " + rcvStr, "ControlChannel init");
-			}*/
-			
 			//But we must make sure that this packet has been sent here correctly.
 			if (rcvStr != null)
 			{
@@ -89,6 +77,12 @@ public class ControlChannel
 				
 				JSONObject rcvInfo = new JSONObject(rcvStr);
 				myController.assignName(rcvInfo.getString("name"));
+				
+				JSONObject response = new JSONObject();
+				response.put("port", dataPort);
+				os.println(response.toString());
+				os.flush();
+				
 				ret = true;
 			}
 			//The receive String is null means that this connection is broken,
@@ -208,13 +202,14 @@ public class ControlChannel
 			{
 				if (type.equals("upload"))
 				{
-					myController.upload(request.getString("filename"), request.getString("digest"));
+					request.remove("type");
+					myController.upload(request);
 				}
 				else
 				{
 					if (type.equals("download"))
 					{
-						
+						myController.download(request.getString("filename"));
 					}
 					else
 					{
@@ -234,14 +229,6 @@ public class ControlChannel
 							}
 							else
 							{
-								if (type.equals("finish"))
-								{
-									myController.finishFileTransfer(request.getString("filename"));
-								}
-								else
-								{
-									
-								}
 							}
 						}
 					}
