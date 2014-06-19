@@ -332,8 +332,8 @@ public class TransferTask extends Thread
 					size += transferBlocks.get(hi).size + 8;
 					hi ++;
 				}
-				hi --;
-				size -= transferBlocks.get(hi).size + 8;
+				//hi --;
+				//size -= transferBlocks.get(hi).size + 8;
 				
 				bf.putInt(hi - lo);
 				for (int j = lo; j < hi; j ++)
