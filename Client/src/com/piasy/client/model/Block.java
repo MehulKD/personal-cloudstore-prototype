@@ -19,6 +19,7 @@ public class Block
 	public String filename, hash;
 	public int blockSeq = -1;
 	public boolean finished = false;
+	public boolean redund = false;
 	
 	public Block(String filename, long size, long offset, int blockSeq, String hash)
 	{

@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import org.apache.commons.codec.binary.Hex;
 
 
+
+
 import com.planetj.math.rabinhash.PJLProvider;
 
 /**
@@ -27,21 +29,6 @@ import com.planetj.math.rabinhash.PJLProvider;
  * */
 public class IndexModel
 {
-	static MessageDigest MD5 = null;
-
-	//initialize the MD5 algorithm instance
-    static 
-    {
-        try 
-        {
-        	MD5 = MessageDigest.getInstance("MD5");
-        } 
-        catch (NoSuchAlgorithmException e) 
-        {
-        	e.printStackTrace();
-        }
-    }
-    
     /**
      * Get the MD5 digest.
      * @param the target file
@@ -53,9 +40,10 @@ public class IndexModel
 	    FileInputStream fileInputStream = null;
 	    try
 	    {
+	    	MessageDigest MD5 = MessageDigest.getInstance("MD5");
 	    	MD5.reset();
 		    fileInputStream = new FileInputStream(file);
-		    byte[] buffer = new byte[Constant.BUFFER_SIZE];
+		    byte[] buffer = new byte[Constant.CDC_BUFFER_SIZE];
 		    int length;
 		    while ((length = fileInputStream.read(buffer)) != -1) 
 		    {
@@ -72,25 +60,33 @@ public class IndexModel
 	    {
 	    	e.printStackTrace();
 	    }
+		catch (NoSuchAlgorithmException e)
+		{
+			e.printStackTrace();
+		}
 	    
 	    return digest;
     }
-    
+
+    /**
+     * Get the MD5 of part of a file
+     * */
     public static String getMD5(File file, long offset, long size) 
     {
     	String digest = null;
 	    try
 	    {
+	    	MessageDigest MD5 = MessageDigest.getInstance("MD5");
 	    	RandomAccessFile fin = new RandomAccessFile(file, "r");
 	    	fin.seek(offset);
 	    	MD5.reset();
-	    	byte[] buffer = new byte[Constant.BUFFER_SIZE];
+	    	byte[] buffer = new byte[Constant.CDC_BUFFER_SIZE];
 		    int length;
 		    long totalRead = 0;
 		    while (totalRead < size) 
 		    {
-		    	length = fin.read(buffer, 0, (int) ((size - totalRead < Constant.BUFFER_SIZE)
-		    			? (size - totalRead) : Constant.BUFFER_SIZE));
+		    	length = fin.read(buffer, 0, (int) ((size - totalRead < Constant.CDC_BUFFER_SIZE)
+		    			? (size - totalRead) : Constant.CDC_BUFFER_SIZE));
 		    	MD5.update(buffer, 0, length);
 		    	totalRead += length;
 		    }
@@ -105,29 +101,44 @@ public class IndexModel
 	    {
 	    	e.printStackTrace();
 	    }
+		catch (NoSuchAlgorithmException e)
+		{
+			e.printStackTrace();
+		}
 	    
 	    return digest;
     }
     
-    public static ArrayList<Block> CDCSplit(File file)
-    {
-    	return split(file);
-    }
 
+    /**
+     * Apply CDC to a file
+     * */
+    public static ArrayList<Block> CDCSplit(File file, int magic, 
+    		int mask, int min, int max, int step)
+    {
+    	return split(file, step, magic,
+    			mask, min, max);
+    }
+    
 	protected static MessageDigest getRollHashFunc() throws NoSuchAlgorithmException
 	{
 		return MessageDigest.getInstance("RHF64", new PJLProvider());
 	}
-	
-    public static ArrayList<Block> split(File file)
+
+    /**
+     * Apply CDC to a file
+     * */
+    public static ArrayList<Block> split(File file, int SLID_WINDOW_STEP, 
+    		int CDC_MAGIC, int CDC_MASK, int MIN_BLOCK_SIZE, int MAX_BLOCK_SIZE)
     {
     	ArrayList<Block> blocks = new ArrayList<Block>();
     	try
 		{
     		MessageDigest digest = getRollHashFunc();
+			ByteBuffer bf = ByteBuffer.allocate(digest.getDigestLength());
 			FileInputStream fin = new FileInputStream(file);
-			byte[] buffer = new byte[Constant.BUFFER_SIZE];
-			int read = fin.read(buffer);
+			byte[] buffer = new byte[Constant.CDC_BUFFER_SIZE];
+			int read = fin.read(buffer, 0, Constant.CDC_BUFFER_SIZE);
 			long offset = 0, pos = 0;
 			int i = 0;
 			long size = 0;
@@ -136,37 +147,28 @@ public class IndexModel
 			{
 				//calculate the last window, cause if the stream reaches end, it won't
 				//enter the loop.
-				for (; i <= read - Constant.CDC_WINDOW_SIZE; i += Constant.SLID_WINDOW_STEP)
+				for (; i <= read - Constant.CDC_WINDOW_SIZE; i += SLID_WINDOW_STEP)
 				{
 					digest.reset();
+					bf.clear();
 					digest.update(buffer, i, Constant.CDC_WINDOW_SIZE);
-					ByteBuffer bf = ByteBuffer.allocate(digest.getDigestLength());
 					bf.put(digest.digest());
-					int end = bf.getInt(digest.getDigestLength() - 4) & Constant.CDC_MASK;
+					int end = bf.getInt(digest.getDigestLength() - 4) & CDC_MASK;
 					size = pos - offset + Constant.CDC_WINDOW_SIZE;
-					if (((end == Constant.CDC_MAGIC) && (Constant.MIN_BLOCK_SIZE <= size))
-							|| (size == Constant.MAX_BLOCK_SIZE))
+					if (((end == (CDC_MAGIC & CDC_MASK)) && (MIN_BLOCK_SIZE <= size))
+							|| (MAX_BLOCK_SIZE <= size))
 					{
 						blocks.add(new Block(file.getAbsolutePath(), size, offset, blocks.size(), 
 								getMD5(file, offset, size)));
-//						if (size == Constant.MAX_BLOCK_SIZE)
-//						{
-//							maxSizeBlockNum ++;
-//						}
-//						else if (size == Constant.MIN_BLOCK_SIZE)
-//						{
-//							minSizeBlockNum ++;
-//						}
-						
 						offset = pos + Constant.CDC_WINDOW_SIZE;
 						pos = offset;
 						//skip CDC_WINDOW_SIZE - SLID_WINDOW_STEP calculations
-						i += Constant.CDC_WINDOW_SIZE - Constant.SLID_WINDOW_STEP;
+						i += Constant.CDC_WINDOW_SIZE - SLID_WINDOW_STEP;
 						added = true;
 					}
 					else
 					{
-						pos += Constant.SLID_WINDOW_STEP;
+						pos += SLID_WINDOW_STEP;
 						added = false;
 					}
 				}
@@ -175,7 +177,7 @@ public class IndexModel
 				if (read < Constant.CDC_WINDOW_SIZE)
 				{
 					size = read;
-					read = fin.read(buffer, 0, Constant.BUFFER_SIZE);
+					read = fin.read(buffer, 0, Constant.CDC_BUFFER_SIZE);
 					//read must be -1
 					i = 0;
 				}
@@ -186,7 +188,7 @@ public class IndexModel
 						if (0 < i - read)
 						{
 							//skip first i - read bytes of next read
-							read = fin.read(buffer, 0, Constant.BUFFER_SIZE);
+							read = fin.read(buffer, 0, Constant.CDC_BUFFER_SIZE);
 							
 							i = i - read;
 							//! needn't change pos anymore...
@@ -204,7 +206,7 @@ public class IndexModel
 								tail[j] = buffer[i + j];
 							}
 							read = fin.read(buffer, left, 
-									Constant.BUFFER_SIZE - left);
+									Constant.CDC_BUFFER_SIZE - left);
 
 							if (read != -1)
 							{
@@ -222,7 +224,7 @@ public class IndexModel
 						else
 						{
 							//!oh fuck...
-							read = fin.read(buffer, 0, Constant.BUFFER_SIZE);
+							read = fin.read(buffer, 0, Constant.CDC_BUFFER_SIZE);
 							
 							i = 0;
 							//! needn't change pos anymore...
@@ -231,7 +233,7 @@ public class IndexModel
 					}
 					else
 					{
-						read = fin.read(buffer, 0, Constant.BUFFER_SIZE);
+						read = fin.read(buffer, 0, Constant.CDC_BUFFER_SIZE);
 						
 						i = 0;
 						//! needn't change pos anymore...
@@ -239,7 +241,7 @@ public class IndexModel
 					}
 				}
 				
-				System.out.println("finish " + offset + " / " + file.length());
+//				System.out.println("finish " + offset + " / " + file.length());
 			}
 			fin.close();
 			
@@ -249,15 +251,8 @@ public class IndexModel
 				size = file.length() - offset;
 				blocks.add(new Block(file.getAbsolutePath(), size, offset, blocks.size(), 
 						getMD5(file, offset, size)));
-//				if (size == Constant.MAX_BLOCK_SIZE)
-//				{
-//					maxSizeBlockNum ++;
-//				}
-//				else if (size == Constant.MIN_BLOCK_SIZE)
-//				{
-//					minSizeBlockNum ++;
-//				}
 			}
+			System.gc();
 		}
 		catch (FileNotFoundException e)
 		{

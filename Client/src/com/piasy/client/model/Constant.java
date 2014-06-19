@@ -13,70 +13,61 @@ import android.os.Environment;
  * */
 public class Constant
 {
-	public static final String LOG_LEVEL_INFO = "INFO";
-	public static final String LOG_LEVEL_DEBUG = "DEBUG";
-	public static final String LOG_LEVEL_WARNING = "WARNING";
-	public static final String LOG_LEVEL_ERROR = "ERROR";
-	public static final String LOG_LEVEL_FATAL = "FATAL";
-	
 	public static final String APP_BASE_DIR = Environment.getExternalStorageDirectory().getPath() + "/CloudDir";
 	public static final String TMP_DIR = APP_BASE_DIR + "/.tmp";
-	public static final String LOG_FILE_NAME = APP_BASE_DIR + "/log/test.log";
+	public static final String LOG_FILE_NAME = APP_BASE_DIR + "/log/test.log.txt";
 	
-	public static final String DATABASE_FILE_TABLE_NAME = "files";
-	public static final String DATABASE_BLOCK_TABLE_NAME = "blocks";
+	/**
+	 * Constant for raptor code
+	 * */
+	public static final int K_NUM = 600;
+	public static final int MIN_SYMBOL_SIZE = 128;
+	public static final int SYMBOL_SIZE = 1024;
+	public static final double OVERHEAD = 0.02;
+	public static final int UDP_FAST_INTERVAL = 15;	//ms
+	public static final int UDP_SLOW_INTERVAL = 20;	//ms
+	public static final int PKT_SIZE = 1500;	//byte
+	public static final int CODING_THREAD_WAIT_TIME = 2 * 1000;
+	public static final int CODING_THREAD_COUNT = 5;
+	public static final int CODING_STATE_READY = 0;
+	public static final int CODING_STATE_ENCODE_START = 1;
+	public static final int CODING_STATE_ENCODE_END = 2;
+	public static final int CODING_STATE_SEND_START = 3;
+	public static final int CODING_STATE_SEND_END = 4;
 	
-	public static final int CHANNEL_POOL_SIZE = 20;
-	public static final int BLOCK_SIZE = 4 * 1024 * 1024;
+	public static final int STATIC_BLOCK_SIZE = 4 * 1024 * 1024;
 	
-	public static final int FILE_STATUS_NONEXIST = 1;
-	public static final int FILE_STATUS_OLDER = FILE_STATUS_NONEXIST + 1;
-	public static final int FILE_STATUS_SYNCED = FILE_STATUS_OLDER + 1;
-	public static final int FILE_STATUS_UPLOAD_PARTLY = FILE_STATUS_SYNCED + 1;
-	public static final int FILE_STATUS_DOWNLOAD_PARTLY = FILE_STATUS_UPLOAD_PARTLY + 1;
-	public static final int FILE_STATUS_NEWER = FILE_STATUS_DOWNLOAD_PARTLY + 1;
-	
-	public static final int BLOCK_UPLOAD_UNACKED = 1;
-	public static final int BLOCK_UPLOAD_ACKED = BLOCK_UPLOAD_UNACKED + 1;
-	public static final int BLOCK_DOWNLOAD_UNACKED = BLOCK_UPLOAD_ACKED + 1;
-	public static final int BLOCK_DOWNLOAD_ACKED = BLOCK_DOWNLOAD_UNACKED + 1;
-	public static final int BLOCK_UPDATE_UP_UNACKED = BLOCK_DOWNLOAD_ACKED + 1;
-	public static final int BLOCK_UPDATE_UP_ACKED = BLOCK_UPDATE_UP_UNACKED + 1;
-	public static final int BLOCK_UPDATE_DOWN_UNACKED = BLOCK_UPDATE_UP_ACKED + 1;
-	public static final int BLOCK_UPDATE_DOWN_ACKED = BLOCK_UPDATE_DOWN_UNACKED + 1;
-	
+
+	/**
+	 * Constant for file transfer
+	 * */
 	public static final int REQUEST_TYPE_QUERY = 1;
 	public static final int REQUEST_TYPE_UPLOAD = 2;
 	public static final int REQUEST_TYPE_DOWNLOAD = 3;
-	public static final int REQUEST_TYPE_UPDATE_UP = 4;
-	public static final int REQUEST_TYPE_UPDATE_DOWN = 5;
-	public static final int REQUEST_TYPE_PURE_UPLOAD = 6;
-	public static final int REQUEST_TYPE_PURE_DOWNLOAD = 7;
-	public static final int REQUEST_TYPE_UPDATE_UP_FAST = 8;
 	public static final int REQUEST_TYPE_EXIT = 100;
-	
 	public static final int TRANSFER_MODE_NONE = 0;
 	public static final int TRANSFER_MODE_UPLOAD = REQUEST_TYPE_UPLOAD;
 	public static final int TRANSFER_MODE_DOWNLOAD = REQUEST_TYPE_DOWNLOAD;
-	public static final int TRANSFER_MODE_UPDATE_UP = REQUEST_TYPE_UPDATE_UP;
-	public static final int TRANSFER_MODE_UPDATE_DOWN = REQUEST_TYPE_UPDATE_DOWN;
-	public static final int TRANSFER_MODE_PURE_UPLOAD = REQUEST_TYPE_PURE_UPLOAD;
-	public static final int TRANSFER_MODE_PURE_DOWNLOAD = REQUEST_TYPE_PURE_DOWNLOAD;
-	public static final int TRANSFER_MODE_UPDATE_UP_FAST = REQUEST_TYPE_UPDATE_UP_FAST;
-	
+
+	public static final int CLOSE_SOCKET_TIMEOUT = 5 * 60 * 1000;
+	public static final int SO_SOCKET_TIMEOUT = 5 * 60 * 1000;
+
+	/**
+	 * Constant for CDC
+	 * */
 	public static final int CDC_WINDOW_SIZE = 48;
 	public static final int SLID_WINDOW_STEP = 8;
-	public static final int CDC_MAGIC = 0x00000847;
-	public static final int CDC_MASK = 0x00000fff;
-	public static final int BUFFER_SIZE = CDC_WINDOW_SIZE * CDC_WINDOW_SIZE * 20;
+	public static final int CDC_MAGIC = 0x00000247;
+	public static final int CDC_MASK = 0x000007ff;
+	public static final int CDC_BUFFER_SIZE = CDC_WINDOW_SIZE * CDC_WINDOW_SIZE * 8;
+	public static final int BUFFER_SIZE = 4 * 1024 * 1024;
 	public static final int MAX_BLOCK_SIZE = 4 * 1024 * 1024;
-	public static final int MIN_BLOCK_SIZE = 128 * 1024;
+	public static final int MIN_BLOCK_SIZE = 0;
 	
-	public static final int CLOSE_SOCKET_TIMEOUT = 5 * 60 * 1000;
-	
+
+	public static final int CHANNEL_POOL_SIZE = 20;
 	public static final int DATACHANNEL_ACTIVE = 1;
 	public static final int DATACHANNEL_WAIT = 2;
 	public static final int DATACHANNEL_DEAD = 3;
 	
-	public static final double MODIFY_P = 0.005;
 }

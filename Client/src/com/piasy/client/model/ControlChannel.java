@@ -10,8 +10,6 @@ import java.net.UnknownHostException;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.util.Log;
-
 import com.piasy.client.controller.Controller;
 
 /**
@@ -70,17 +68,11 @@ public class ControlChannel
 		}
 		catch (UnknownHostException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : UnknownHostException");
+			e.printStackTrace();
 		}
 		catch (IOException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel init : IOException");
+			e.printStackTrace();
 		}
 		return ret;
 	}
@@ -104,21 +96,15 @@ public class ControlChannel
 			int dataPort = response.getInt("port");
 			myController.setDataPort(dataPort);
 			
-			Log.i(Constant.LOG_LEVEL_INFO, "send init info : " + initInfo.toString());
+			System.out.println("send init info : " + initInfo.toString());
 		}
 		catch (JSONException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : JSONException");
+			e.printStackTrace();
 		}
 		catch (IOException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel sentInitInfo : IOException");
+			e.printStackTrace();
 		}
 	}
 	
@@ -138,97 +124,12 @@ public class ControlChannel
 			os.println(queryInfo.toString());
 			os.flush();
 			
-			Log.i(Constant.LOG_LEVEL_INFO, "send query request : " + queryInfo.toString());
+			System.out.println("send query request : " + queryInfo.toString());
 		}
 		catch (JSONException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel query : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel query : JSONException");
+			e.printStackTrace();
 		}
-	}
-	
-	/**
-	 * Send exit message to server. And stop listening to server.
-	 * */
-	public void exit()
-	{
-		JSONObject queryInfo = new JSONObject();
-		
-		try
-		{
-			queryInfo.put("type", "exit");
-			
-			os.println(queryInfo.toString());
-			os.flush();
-			
-			keepListening = false;
-			is.close();
-			os.close();
-			socket.close();
-			
-			Log.i(Constant.LOG_LEVEL_INFO, "send exit request : " + queryInfo.toString());
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel exit : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel exit : JSONException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel exit : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel exit : IOException");
-		}
-	}
-	
-	/**
-	 * Send upload request to server, including the file name, file size,
-	 * and digest information, providing for server to decide whether this
-	 * file need to be transferred. And add a record to the local database.
-	 * @param name of the file to be uploaded.
-	 * */
-	public boolean upload(JSONObject uploadInfo)
-	{
-		boolean ret = false;
-		os.println(uploadInfo.toString());
-		os.flush();
-		ret = true;		
-		return ret;
-	}
-	
-	/**
-	 * Send download request to server, including the file name, 
-	 * @param filename : name of the file to be uploaded, in format
-	 * of username/filename
-	 * */
-	public boolean download(String filename)
-	{
-		boolean ret = false;
-		JSONObject downloadInfo = new JSONObject();
-		try
-		{
-			downloadInfo.put("type", "download");
-			downloadInfo.put("filename", filename);
-			
-			os.println(downloadInfo.toString());
-			os.flush();
-			
-			ret = true;
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel upload : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel upload : JSONException");
-		}
-		
-		return ret;
 	}
 	
 	boolean keepListening = true;
@@ -252,23 +153,20 @@ public class ControlChannel
 					{
 						//TO-DO parse message here and notify controller
 						//just transmit it to controller.
-						Log.i(Constant.LOG_LEVEL_INFO, "receive reply : " + rcvStr);
+						System.out.println("receive reply : " + rcvStr);
 						myController.parseResponse(rcvStr);						
 					}
 					//The receive String is null means that this connection is broken.
 					else
 					{
-						Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel listenRunnable : receive null response");
+						System.out.println("at ControlChannel listenRunnable : receive null response");
 						keepListening = false;
 					}
 				}
 			}
 			catch (IOException e)
 			{
-				if (e.getMessage() != null)
-					Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel listenRunnable : " + e.getMessage());
-				else
-					Log.e(Constant.LOG_LEVEL_ERROR, "at ControlChannel listenRunnable : IOException");
+				e.printStackTrace();
 			}
 		}
 	};

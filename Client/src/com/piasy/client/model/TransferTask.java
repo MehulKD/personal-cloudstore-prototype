@@ -1,35 +1,31 @@
 package com.piasy.client.model;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.RandomAccessFile;
 import java.io.UnsupportedEncodingException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import com.piasy.client.controller.Controller;
+import raptor.util.Config;
+import raptor.util.Receiver;
 
-import android.os.Looper;
-import android.util.Log;
+import com.piasy.client.controller.Controller;
 
 /**
  * <p>The transfer task class, it takes charge of the transfer of
@@ -44,1075 +40,593 @@ import android.util.Log;
 public class TransferTask extends Thread
 {
 	int mode = Constant.TRANSFER_MODE_NONE;
-	ArrayList<String> files;
+	String filename;
 	Socket channel;
 	BufferedReader cis;
 	PrintWriter cos;
-	DataInputStream dis;
-	DataOutputStream dos;
-	HashMap<String, ArrayList<Block>> splitBlocks = new HashMap<String, ArrayList<Block>>();
-	HashMap<String, ArrayList<Block>> transferBlocks;
-	boolean fastMode = false;
 	boolean finished = false;
 	int port;
+	TransferTask instance;
 	
-	public TransferTask(int mode, ArrayList<String> files, boolean fastMode, int port)
+	public TransferTask(int mode, String filename, int port)
 	{
 		this.mode = mode;
-		this.files = files;
-		this.fastMode = fastMode;
+		this.filename = filename;
 		this.port = port;
+		instance = this;
 	}
+
+	DatagramSocket dgclient, dgserver;
+	ArrayList<Block> transferBlocks;
+	ArrayList<JSONObject> downloadBlocks = new ArrayList<JSONObject>();
+	ArrayList<Block> splitBlocks;
 	
-	public boolean finished()
-	{
-		return finished;
-	}
+
+	InetAddress addr = null;
+	ByteBuffer pktBf = ByteBuffer.allocate(Constant.PKT_SIZE);
 	
+	long transferSize = 0;
+	long totalSize = 0;
+	
+	long uploadSplitTime = 0, uploadEncodeTime = 0, uploadSendTime = 0;
 	@Override
 	public void run() 
 	{
-		Looper.prepare();
-		File myFile = new File(files.get(0));
-		File logFile = new File(Constant.LOG_FILE_NAME);
 		try
 		{
-			logFile.createNewFile();
-			BufferedWriter bw = new BufferedWriter(new FileWriter(logFile, true));
-			String logStr = myFile.getAbsolutePath() + ",";
-			bw.append(logStr, 0, logStr.length());
+			addr = InetAddress.getByName(Setting.SERVER_IP);
+			dgclient = new DatagramSocket();
 			
-			if (!fastMode)
+			switch (mode)
 			{
-				switch (mode)
-				{
-				case Constant.TRANSFER_MODE_DOWNLOAD:
-				{
-					try
-					{
-						long start = System.currentTimeMillis();
-						
-						logStr = "0,";
-						bw.append(logStr, 0, logStr.length());
-						
-						init();
-						transferBlocks = getDownloadBlocks();
-						dis = new DataInputStream(channel.getInputStream());
-						for (String filename : transferBlocks.keySet())
-						{
-							ArrayList<Block> fileBlocks = transferBlocks.get(filename);
-							for (Block block : fileBlocks)
-							{
-								download(block);
-							}
-							
-							boolean succed = true;
-							for (Block block : fileBlocks)
-							{
-								Log.d(Constant.LOG_LEVEL_DEBUG, "block : " + block.blockSeq + ", " + block.finished);
-								succed = succed && block.finished;
-								if (!succed)
-								{
-									break;
-								}
-							}
-							
-							if (succed)
-							{
-								merge(filename);
-							}
-							else
-							{
-								//TODO re-transfer
-							}
-						}
-						
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("下载完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr, 0, logStr.length());
-					}
-					catch (FileNotFoundException e)
-					{
-						e.printStackTrace();
-					}
-					catch (UnsupportedEncodingException e)
-					{
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						e.printStackTrace();
-					}
-					break;
-				}
-				case Constant.TRANSFER_MODE_PURE_DOWNLOAD:
+			case Constant.TRANSFER_MODE_UPLOAD:
+				try
 				{
 					JSONObject request = new JSONObject();
-					JSONArray filesInfo = new JSONArray();
-					try
-					{
-						long start = System.currentTimeMillis();
 
-						logStr = "0,";
-						bw.append(logStr, 0, logStr.length());
-						
-						request.put("type", "puredownload");
-						for (String filename : files)
-						{
-							JSONObject fileInfo = new JSONObject();
-							fileInfo.put("filename", filename);
-							filesInfo.put(fileInfo);
-						}
-						request.put("files", filesInfo);
-
-						init();
-						cos.println(request.toString());
-						cos.flush();
-
-						String rcvStr = cis.readLine();
-						JSONArray response = new JSONArray(rcvStr);
-						for (int i = 0; i < response.length(); i ++)
-						{
-							pureDownload(response.getJSONObject(i).getString("filename"),
-									response.getJSONObject(i).getLong("size"));
-							Controller.getController()
-							.transferFileFinish(response.getJSONObject(i).getString("filename"), 
-									mode);
-						}
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("纯下载完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr, 0, logStr.length());
-						
-						finished = true;
-//						close();
-						Controller.getController().transferFinish();
-					}
-					catch (JSONException e)
+					File file = new File(filename);
+					request.put("type", "upload");
+					request.put("filename", filename);
+					request.put("size", file.length());
+					
+					Controller myController = Controller.getController();
+					com.piasy.client.model.Config conf = myController.getConf(file.length());
+					System.out.println("to split");
+					long start1 = System.currentTimeMillis();
+					splitBlocks = IndexModel.CDCSplit(file, conf.magic,
+									conf.mask, conf.min, conf.max, conf.step);
+					
+					uploadSplitTime = (System.currentTimeMillis() - start1);
+					start1 = System.currentTimeMillis();
+					
+					System.out.println("Split time: " + uploadSplitTime + " ms");
+					System.out.println("Split finish! " + splitBlocks.size() + " blocks");
+					JSONArray blocksInfo = new JSONArray();
+					for (Block block : splitBlocks)
 					{
-						e.printStackTrace();
+						JSONObject blockInfo = new JSONObject();
+						blockInfo.put("seq", block.blockSeq);
+						blockInfo.put("size", block.size);
+						blockInfo.put("hash", block.hash);
+						blocksInfo.put(blockInfo);
 					}
-					catch (IOException e)
+					
+					request.put("blocks", blocksInfo);
+
+					if (!init())
 					{
-						e.printStackTrace();
+						System.out.println("Init failed!");
+						return;
 					}
-					break;
+					
+					transferBlocks = getUploadBlocks(request);
+					
+					upload();
+					
+					System.out.println("Total work, redund : " + ((double) (totalSize - transferSize) / totalSize) 
+										+ ", split time : " + uploadSplitTime + ", encode & upload time : " 
+										+ (System.currentTimeMillis() - start1));
 				}
-				case Constant.TRANSFER_MODE_PURE_UPLOAD:
+				catch (UnsupportedEncodingException e)
+				{
+					e.printStackTrace();
+				}
+				catch (IOException e)
+				{
+					e.printStackTrace();
+				}
+				catch (JSONException e)
+				{
+					e.printStackTrace();
+				}
+				break;
+			case Constant.TRANSFER_MODE_DOWNLOAD:
+			{
+				dgserver = new DatagramSocket();
+				if (!init() && 0 < dgserver.getLocalPort())
+				{
+					System.out.println("Init failed!");
+					return;
+				}
+				
+				try
 				{
 					JSONObject request = new JSONObject();
-					JSONArray filesInfo = new JSONArray();
-					try
-					{
-						long start = System.currentTimeMillis();
 
-						logStr = "0,";
-						bw.append(logStr, 0, logStr.length());
-						
-						request.put("type", "pureupload");
-						for (String filename : files)
-						{
-							JSONObject fileInfo = new JSONObject();
-							File file = new File(filename);
-							File gzipFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".gz");
-							GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(gzipFile));
-							FileInputStream fin = new FileInputStream(file);
-							byte [] buf = new byte[Constant.BUFFER_SIZE];
-							int read;
-							while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-							{
-								gos.write(buf, 0, read);
-							}
-							fin.close();
-							gos.close();
-							
-							fileInfo.put("filename", filename);
-							fileInfo.put("size", gzipFile.length());
-							filesInfo.put(fileInfo);
-						}
-						request.put("files", filesInfo);
-
-						init();
-						cos.println(request.toString());
-						cos.flush();
-						System.out.println("send " + request.toString());
-
-						dos = new DataOutputStream(channel.getOutputStream());
-						for (String filename : files)
-						{
-							pureUpload(filename);
-							Controller.getController().transferFileFinish(filename, mode);
-						}
-
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("纯上传完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr, 0, logStr.length());
-						
-						finished = true;
-//						close();
-						Controller.getController().transferFinish();
-					}
-					catch (JSONException e)
-					{
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						e.printStackTrace();
-					}
-					break;
+					request.put("type", "download");
+					request.put("filename", filename);
+					request.put("port", dgserver.getLocalPort());
+					
+					transferBlocks = getDownloadBlocks(request);
+					download();
 				}
-				case Constant.TRANSFER_MODE_UPLOAD:
-					try
-					{
-						long start = System.currentTimeMillis();
-						
-						JSONObject request = new JSONObject();
-						JSONArray filesInfo = new JSONArray();
-						request.put("type", "upload");
-						for (String filename : files)
-						{
-							JSONObject fileInfo = new JSONObject();
-							File file = new File(filename);
-							
-							fileInfo.put("filename", filename);
-							fileInfo.put("size", file.length());
-							ArrayList<Block> fileBlocks = IndexModel.CDCSplit(file);
-							JSONArray blocksInfo = new JSONArray();
-							for (Block block : fileBlocks)
-							{
-								JSONObject blockInfo = new JSONObject();
-								blockInfo.put("seq", block.blockSeq);
-								blockInfo.put("size", block.size);
-								blockInfo.put("hash", block.hash);
-								blocksInfo.put(blockInfo);
-							}
-							fileInfo.put("blocks", blocksInfo);
-							splitBlocks.put(filename, fileBlocks);
-							filesInfo.put(fileInfo);
-						}
-						request.put("files", filesInfo);
-
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("切块完成，耗时" + time + "毫秒");
-						logStr = time + ",";
-						bw.append(logStr, 0, logStr.length());
-						start = System.currentTimeMillis();
-						
-						init();
-						dos = new DataOutputStream(channel.getOutputStream());
-						transferBlocks = getUploadBlocks(request);
-						Thread ackListenThread = new Thread(ackListenRunnable);
-						ackListenThread.start();
-						for (String filename : transferBlocks.keySet())
-						{
-							ArrayList<Block> fileBlocks = transferBlocks.get(filename);
-							for (int i = 0; i < fileBlocks.size(); i ++)
-							{
-								upload(fileBlocks.get(i));
-							}
-						}
-						
-						time = System.currentTimeMillis() - start;
-						Controller.makeToast("上传完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr, 0, logStr.length());
-					}
-					catch (UnsupportedEncodingException e)
-					{
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						e.printStackTrace();
-					}
-					catch (JSONException e)
-					{
-						e.printStackTrace();
-					}
-					break;
-				case Constant.TRANSFER_MODE_UPDATE_DOWN:
-					break;
-				case Constant.TRANSFER_MODE_UPDATE_UP_FAST:
-					try
-					{
-						bw.append("0,");
-						long start = System.currentTimeMillis();
-						
-						JSONObject request = new JSONObject();
-						JSONArray filesInfo = new JSONArray();
-						request.put("type", "updateupfast");
-						for (String filename : files)
-						{
-							JSONObject fileInfo = new JSONObject();
-							fileInfo.put("filename", filename);
-							filesInfo.put(fileInfo);
-						}
-						request.put("files", filesInfo);
-						init();
-						
-						cos.println(request.toString());
-						cos.flush();
-						
-						for (String filename : files)
-						{
-							updateUpFast(filename);
-							Controller.getController().transferFileFinish(filename, mode);
-						}
-						
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("向上快速同步完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr);
-						
-						finished = true;
-//						close();
-						Controller.getController().transferFinish();
-					}
-					catch (UnsupportedEncodingException e)
-					{
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						e.printStackTrace();
-					}
-					catch (JSONException e)
-					{
-						e.printStackTrace();
-					}
-					break;
-				case Constant.TRANSFER_MODE_UPDATE_UP:
-					try
-					{
-						bw.append("0,");
-						long start = System.currentTimeMillis();
-						
-						JSONObject request = new JSONObject();
-						JSONArray filesInfo = new JSONArray();
-						request.put("type", "updateup");
-						for (String filename : files)
-						{
-							JSONObject fileInfo = new JSONObject();
-							fileInfo.put("filename", filename);
-							filesInfo.put(fileInfo);
-						}
-						request.put("files", filesInfo);
-						init();
-						
-						cos.println(request.toString());
-						cos.flush();
-						
-						for (String filename : files)
-						{
-							updateUp(filename);
-							Controller.getController().transferFileFinish(filename, mode);
-						}
-						
-						long time = System.currentTimeMillis() - start;
-						Controller.makeToast("向上同步完成，耗时" + time + "毫秒");
-						logStr = time + "\n";
-						bw.append(logStr);
-						
-						finished = true;
-//						close();
-						Controller.getController().transferFinish();
-					}
-					catch (UnsupportedEncodingException e)
-					{
-						e.printStackTrace();
-					}
-					catch (IOException e)
-					{
-						e.printStackTrace();
-					}
-					catch (JSONException e)
-					{
-						e.printStackTrace();
-					}
-					break;
-				default:
-					break;
-				}
-			}
-			else
-			{
-				switch (mode)
+				catch (JSONException e)
 				{
-				case Constant.TRANSFER_MODE_DOWNLOAD:
-					break;
-				case Constant.TRANSFER_MODE_UPLOAD:
-					break;
-				case Constant.TRANSFER_MODE_UPDATE_DOWN:
-					break;
-				case Constant.TRANSFER_MODE_UPDATE_UP:
-					break;
-				default:
-					break;
+					e.printStackTrace();
 				}
+				
+				
+				break;
 			}
-			
-			bw.close();
+			default:
+				break;
+			}
+		}
+		catch (UnknownHostException e1)
+		{
+			e1.printStackTrace();
 		}
 		catch (IOException e1)
 		{
 			e1.printStackTrace();
 		}
-		
-		Looper.loop();
 	}
 	
-	protected boolean init()
+	private ArrayList<Block> getUploadBlocks(JSONObject request) 
+			throws IOException, JSONException
+	{
+		ArrayList<Block> uploadBlocks = new ArrayList<Block>();
+		cos.println(request.toString());
+		cos.flush();
+		System.out.println("Send : " + request.toString());
+		
+		String rcvStr = cis.readLine();
+		System.out.println("Rcv : " + rcvStr);
+		JSONObject reply = new JSONObject(rcvStr);
+		
+		JSONArray blocks = reply.getJSONArray("blocks");
+		for (int i = 0; i < blocks.length(); i ++)
+		{
+			JSONObject block = blocks.getJSONObject(i);
+			int seq = block.getInt("seq");
+			String action = block.getString("action");
+			
+			if (action.equals("success"))
+			{
+				
+			}
+			else if (action.equals("upload"))
+			{
+				uploadBlocks.add(splitBlocks.get(seq));
+				transferSize += splitBlocks.get(seq).size;
+			}
+			totalSize += splitBlocks.get(seq).size;
+		}
+		
+		return uploadBlocks;
+	}
+	
+	JSONArray allDownloadBlocks = new JSONArray();
+	private ArrayList<Block> getDownloadBlocks(JSONObject request) 
+			throws IOException, JSONException
+	{
+		ArrayList<Block> _downloadBlocks = new ArrayList<Block>();
+		
+		cos.println(request.toString());
+		cos.flush();
+		System.out.println("Send : " + request.toString());
+		
+		String rcvStr = cis.readLine();
+		System.out.println("Rcv : " + rcvStr);
+		JSONObject reply = new JSONObject(rcvStr);
+		
+		JSONArray blocks = reply.getJSONArray("blocks");
+		allDownloadBlocks = blocks;
+		String filename = reply.getString("filename");
+		for (int i = 0; i < blocks.length(); i ++)
+		{
+			JSONObject block = blocks.getJSONObject(i);
+			int seq = block.getInt("seq");
+			transferSize += block.getLong("size");
+			
+			_downloadBlocks.add(new Block(filename, block.getLong("size"), 0, seq, block.getString("hash")));
+			downloadBlocks.add(block);
+		}
+		
+		return _downloadBlocks;
+	}
+
+	/**
+	 * Initialize the thread
+	 * */
+	protected boolean init() 
+			throws UnknownHostException, IOException
 	{
 		boolean ret = false;
-		try
-		{
-			channel = new Socket(Setting.SERVER_IP, port);
-			channel.setTcpNoDelay(true);
-			channel.setKeepAlive(true);
-			channel.setSendBufferSize(Constant.BUFFER_SIZE);
-			channel.setReceiveBufferSize(Constant.BUFFER_SIZE);
-			cis = new BufferedReader(new InputStreamReader(channel.getInputStream()));
-			cos = new PrintWriter(channel.getOutputStream());
-		}
-		catch (UnknownHostException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask init: " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask init: UnknownHostException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask init: " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask init: IOException");
-		}
+		channel = new Socket(Setting.SERVER_IP, port);
+		channel.setSoTimeout(Constant.SO_SOCKET_TIMEOUT);
+		channel.setTcpNoDelay(true);
+		channel.setKeepAlive(true);
+		cis = new BufferedReader(new InputStreamReader(channel.getInputStream()));
+		cos = new PrintWriter(channel.getOutputStream());
+		ret = true;
+		
 		return ret;
 	}
 	
-	protected HashMap<String, ArrayList<Block>> getUploadBlocks(JSONObject uploadRequest)
-	{
-		HashMap<String, ArrayList<Block>> blocks = new HashMap<String, ArrayList<Block>>();
-		try
-		{		
-			cos.println(uploadRequest.toString());
-			cos.flush();
-			
-			String rcvStr;
-			synchronized (cis)
-			{
-				rcvStr = cis.readLine();
-			}
-			JSONArray filesResponse = new JSONArray(rcvStr);
-			for (int i = 0; i < filesResponse.length(); i ++)
-			{
-				JSONObject fileResponse = filesResponse.getJSONObject(i);
-				String filename = fileResponse.getString("filename");
-				ArrayList<Block> uploadBlocks = new ArrayList<Block>();
-				JSONArray blocksResponse = fileResponse.getJSONArray("blocks");
-				for (int j = 0; j < blocksResponse.length(); j ++)
-				{
-					JSONObject blockResponse = blocksResponse.getJSONObject(j);
-					int seq = blockResponse.getInt("seq");
-					String action = blockResponse.getString("action");
-					if (action.equals("upload"))
-					{
-						ArrayList<Block> fileBlocks = splitBlocks.get(filename);
-						for (Block block : fileBlocks)
-						{
-							if (block.blockSeq == seq)
-							{
-								uploadBlocks.add(block);
-							}
-						}
-					}
-					else if (action.equals("success"))
-					{
-						ack(filename, seq, false);
-					}
-				}
-				
-				blocks.put(filename, uploadBlocks);
-			}
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask getTransferBlocks: " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask getTransferBlocks: JSONException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask getTransferBlocks: " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask getTransferBlocks: IOException");
-		}
-		return blocks;
-	}
-	
-	protected HashMap<String, ArrayList<Block>> getDownloadBlocks()
-	{
-		HashMap<String, ArrayList<Block>> blocks = new HashMap<String, ArrayList<Block>>();
-		try
-		{
-			JSONObject request = new JSONObject();
-			request.put("type", "download");
-			JSONArray filesInfo = new JSONArray();
-			for (int i = 0; i < files.size(); i ++)
-			{
-				JSONObject fileInfo = new JSONObject();
-				fileInfo.put("filename", files.get(i));
-				filesInfo.put(fileInfo);
-			}
-			request.put("files", filesInfo);
-			
-			cos.println(request.toString());
-			cos.flush();
-			
-			String rcvStr = cis.readLine();
-			filesInfo = new JSONArray(rcvStr);
-			for (int i = 0; i < filesInfo.length(); i ++)
-			{
-				JSONObject fileInfo = filesInfo.getJSONObject(i);
-				String filename = fileInfo.getString("filename");
-				JSONArray blocksInfo = fileInfo.getJSONArray("blocks");
-				ArrayList<Block> downloadBlocks = new ArrayList<Block>();				
-				for (int j = 0 ; j < blocksInfo.length(); j ++)
-				{
-					//TODO filter blocks exist in local file system
-					JSONObject blockInfo = blocksInfo.getJSONObject(j);
-					downloadBlocks.add(new Block(filename, blockInfo.getLong("size"), 
-							0, blockInfo.getInt("seq"), blockInfo.getString("hash")));
-				}
-				splitBlocks.put(filename, downloadBlocks);
-				blocks.put(filename, downloadBlocks);
-			}
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : JSONException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : IOException");
-		}
-		return blocks;
-	}
-	
-	protected void ack(String filename, int seq, boolean accumulate)
-	{
-		ArrayList<Block> fileBlocks = splitBlocks.get(filename);
-		if (accumulate)
-		{
-			ArrayList<Block> acked = new ArrayList<Block>();
-			for (int i = 0; i < fileBlocks.size(); i ++)
-			{
-				if (fileBlocks.get(i).blockSeq <= seq)
-				{
-					acked.add(fileBlocks.get(i));
-				}
-				else
-				{
-					break;
-				}
-			}
-			fileBlocks.removeAll(acked);
-		}
-		else
-		{
-			for (int i = 0; i < fileBlocks.size(); i ++)
-			{
-				if (fileBlocks.get(i).blockSeq == seq)
-				{
-					fileBlocks.remove(i);
-					break;
-				}	
-			}						
-		}
-		
-		if (fileBlocks.size() == 0)
-		{
-			splitBlocks.remove(filename);
-			Controller.getController().transferFileFinish(filename, mode);
-			if (splitBlocks.isEmpty())
-			{
-				finished = true;
-				close();
-				Controller.getController().transferFinish();
-			}
-		}
-	}
-	
-	protected void merge(String filename)
-	{
-		ArrayList<Block> blocks = splitBlocks.get(filename);
-		try
-		{
-			int index = 0;
-			for (index = filename.length() - 1; 0 <= index; index --)
-			{
-				if (filename.charAt(index) == '/')
-				{
-					break;
-				}
-			}
-			File file = new File(Constant.APP_BASE_DIR + "/" + filename.substring(index + 1));
-			file.createNewFile();
-			DataOutputStream dos = new DataOutputStream(new FileOutputStream(file));
-			byte[] buf = new byte[Constant.BUFFER_SIZE];
-			for (int i = 0; i < blocks.size(); i ++)
-			{
-				File partFile = new File(Constant.TMP_DIR + "/" + blocks.get(i).hash);
-				DataInputStream dis = new DataInputStream(new FileInputStream(partFile));
-				int read;
-				while ((read = dis.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-				{
-					dos.write(buf, 0, read);
-				}
-				dis.close();
-				partFile.delete();
-			}
-			dos.close();
-			Controller.getController().transferFileFinish(filename, mode);
-			
-			splitBlocks.remove(filename);
-			if (splitBlocks.isEmpty())
-			{
-				finished = true;
-				close();
-				Controller.getController().transferFinish();
-			}
-		}
-		catch (FileNotFoundException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask merge : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask merge : FileNotFoundException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask merge : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask merge : IOException");
-		}
-	}
-	
-	protected void updateUp(String filename)
-	{
-		try
-		{
-			//read sig file info
-			String sigInfoStr = cis.readLine();
-			JSONObject sigInfo = new JSONObject(sigInfoStr);
-			File file = new File(filename);
-			if (sigInfo.getString("filename").equals(filename))
-			{
-				//receive sig gzip file
-				long size = sigInfo.getLong("size");
-				byte [] buf = new byte[Constant.BUFFER_SIZE];
-				dis = new DataInputStream(channel.getInputStream());
-				File sigGzipFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".sig.gz");
-				FileOutputStream fout = new FileOutputStream(sigGzipFile);
-				long totalRead = 0;
-				int read;
-				while (totalRead < size)
-				{
-					read = dis.read(buf, 0, 
-							(int) ((size - totalRead < Constant.BUFFER_SIZE) ? 
-									(size - totalRead) : Constant.BUFFER_SIZE));
-					fout.write(buf, 0, read);
-					System.out.println("read sig " + read + " bytes");
-					if (read == -1)
-					{
-						continue;
-					}
-					totalRead += read;
-				}
-				fout.flush();
-				fout.close();
-				
-				//uncompress sig file
-				GZIPInputStream gis = new GZIPInputStream(new FileInputStream(sigGzipFile));
-				File sigFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".sig");
-				fout = new FileOutputStream(sigFile);
-				while ((read = gis.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-				{
-					fout.write(buf, 0, read);
-				}
-				gis.close();
-				fout.flush();
-				fout.close();
-				
-				//gen delta file, and compress it
-				File deltaFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".delta");
-				RsyncModel.genDelta(sigFile.getAbsolutePath(), filename, deltaFile.getAbsolutePath());
-				File deltaGzipFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".delta.gz");
-				FileInputStream fin = new FileInputStream(deltaFile);
-				GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(deltaGzipFile));
-				while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-				{
-					gos.write(buf, 0, read);
-				}
-				fin.close();
-				gos.flush();
-				gos.finish();
-				gos.close();
-				
-				//send delta file info
-				JSONObject deltaInfo = new JSONObject();
-				deltaInfo.put("filename", filename);
-				deltaInfo.put("size", deltaGzipFile.length());
-				cos.println(deltaInfo.toString());
-				cos.flush();
-				Thread.sleep(1000);
-				
-				//send delta gzip file
-				dos = new DataOutputStream(channel.getOutputStream());
-				fin = new FileInputStream(deltaGzipFile);
-				while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-				{
-					dos.write(buf, 0, read);
-					System.out.println("send " + read + " bytes");
-				}
-				dos.flush();
-				fin.close();
-			}
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-		catch (JSONException e)
-		{
-			e.printStackTrace();
-		}
-		catch (InterruptedException e)
-		{
-			e.printStackTrace();
-		}
-	}
-	
-	protected void updateUpFast(String filename)
-	{
-		try
-		{
-			File oldFile = new File(filename);
-			File newFile = new File(Constant.TMP_DIR + "/" + oldFile.getName());
-			//gen sig file
-			File sigFile = new File(Constant.TMP_DIR + "/" + oldFile.getName() + ".sig");
-			RsyncModel.genSignature(oldFile.getAbsolutePath(), sigFile.getAbsolutePath());
-			
-			//gen delta file, and compress it
-			File deltaFile = new File(Constant.TMP_DIR + "/" + oldFile.getName() + ".delta");
-			RsyncModel.genDelta(sigFile.getAbsolutePath(), newFile.getAbsolutePath(), 
-					deltaFile.getAbsolutePath());
-			File deltaGzipFile = new File(Constant.TMP_DIR + "/" + oldFile.getName() + ".delta.gz");
-			FileInputStream fin = new FileInputStream(deltaFile);
-			GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(deltaGzipFile));
-			int read;
-			byte [] buf= new byte[Constant.BUFFER_SIZE];
-			while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				gos.write(buf, 0, read);
-			}
-			fin.close();
-			gos.flush();
-			gos.finish();
-			gos.close();
-			
-			//send delta file info
-			JSONObject deltaInfo = new JSONObject();
-			deltaInfo.put("filename", filename);
-			deltaInfo.put("size", deltaGzipFile.length());
-			cos.println(deltaInfo.toString());
-			cos.flush();
-			
-			Thread.sleep(1000);
-			//send delta gzip file
-			dos = new DataOutputStream(channel.getOutputStream());
-			fin = new FileInputStream(deltaGzipFile);
-			while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				dos.write(buf, 0, read);
-				System.out.println("send " + read + " bytes");
-				dos.flush();
-			}
-			dos.flush();
-			fin.close();
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-		catch (JSONException e)
-		{
-			e.printStackTrace();
-		}
-		catch (InterruptedException e)
-		{
-			e.printStackTrace();
-		}
-	}
-	
-	protected void updateDown(String filename)
-	{
-		
-	}
-	
-	protected void pureDownload(String filename, long size)
-	{
-		try
-		{
-			//receive gzip file
-			File tmp = new File(filename);
-			DataInputStream dis = new DataInputStream(channel.getInputStream());
-			File gzipFile = new File(Constant.APP_BASE_DIR + "/" + tmp.getName() + ".gz");
-			FileOutputStream fout = new FileOutputStream(gzipFile);
-			long totalRead = 0;
-			int read;
-			byte [] buf = new byte[Constant.BUFFER_SIZE];
-			while (totalRead < size)
-			{
-				read = dis.read(buf, 0, Constant.BUFFER_SIZE);
-				System.out.println("read " + read + " bytes");
-				totalRead += read;
-				fout.write(buf, 0, read);
-			}
-			fout.close();
-			
-			//uncompress it
-			GZIPInputStream gis = new GZIPInputStream(new FileInputStream(gzipFile));
-			File file = new File(Constant.APP_BASE_DIR + "/" + tmp.getName());
-			fout = new FileOutputStream(file);
-			while ((read = gis.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				fout.write(buf, 0, read);
-			}
-			gis.close();
-			fout.close();
-		}
-		catch (IOException e)
-		{
-			e.printStackTrace();
-		}
-	}
-	
-	protected void pureUpload(String filename)
-	{
-		try
-		{
-			File file = new File(filename);
-			File gzipFile = new File(Constant.TMP_DIR + "/" + file.getName() + ".gz");
-			FileInputStream fin = new FileInputStream(gzipFile);
-			byte buf[] = new byte[Constant.BUFFER_SIZE];
-			int read;
-			int total = 0;
-			long size = gzipFile.length();
-			DataOutputStream dos = new DataOutputStream(channel.getOutputStream());
-			while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				dos.write(buf, 0, read);
-				dos.flush();
-				total += read;
-				System.out.println("send " + read + " bytes, " + total + "/" + size);
-			}
-			dos.flush();
-			fin.close();
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask upload : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask upload : IOException");
-		}
-	}
-	
+	long waitTime = 0;
 	/**
 	 * Upload method, it will create a new thread to upload this block to 
 	 * server.
+	 * @throws JSONException 
 	 * */
-	protected void upload(Block block)
+	protected void upload()
+			throws IOException, JSONException
 	{
-		try
-		{
-			RandomAccessFile dis = new RandomAccessFile(new File(block.filename), "r");
-			dis.seek(block.offset);
-			byte buf[] = new byte[Constant.BUFFER_SIZE];
-			long totalRead = 0;
-			int read;
-			File gzipBlock = new File(Constant.TMP_DIR + "/" + block.hash + ".gz");
-			GZIPOutputStream gos = new GZIPOutputStream(new FileOutputStream(gzipBlock));
-			while (totalRead < block.size)
-			{
-				read = dis.read(buf, 0, 
-						(int) ((block.size - totalRead < Constant.BUFFER_SIZE) ? 
-								(block.size - totalRead) : Constant.BUFFER_SIZE));
-				totalRead += read;
-				gos.write(buf, 0, read);
-			}
-			gos.flush();
-			gos.close();
-			dis.close();
-			
-			ByteBuffer byteBuffer = ByteBuffer.allocate(44);
-			Log.d(Constant.LOG_LEVEL_DEBUG, "upload size = " + gzipBlock.length());
-			byteBuffer.putInt(block.blockSeq);
-			byteBuffer.putLong(gzipBlock.length());
-			byteBuffer.put(block.hash.getBytes());
-			dos = new DataOutputStream(channel.getOutputStream());
-			dos.write(byteBuffer.array());
-			dos.flush();
-				
-			FileInputStream fin = new FileInputStream(gzipBlock);
-			while ((read = fin.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				dos.write(buf, 0, read);
-			}
-			dos.flush();
-			fin.close();
-			gzipBlock.delete();
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask upload : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask upload : IOException");
-		}
-	}
-	
-	protected void download(Block block)
-	{
-		try
-		{
-			JSONObject header = new JSONObject();
-			header.put("filename", block.filename);
-			header.put("seq", block.blockSeq);
-			
-			cos.println(header.toString());
-			cos.flush();
-			Log.d(Constant.LOG_LEVEL_DEBUG, "send : " + header.toString());
-			
-			byte[] buf = new byte[Constant.BUFFER_SIZE];
-			File gzipPartFile = new File(Constant.TMP_DIR + "/" + block.hash + ".gz");
-			gzipPartFile.createNewFile();
-			DataOutputStream dos = new DataOutputStream(new FileOutputStream(gzipPartFile));
-			long totalRead = 0;
-			int read;
-			System.out.println("filename " + block.filename + ", seq" + block.blockSeq + ", size " + block.size);
-			while (totalRead < block.size)
-			{
-				read = dis.read(buf, 0, 
-						(int) ((block.size - totalRead < Constant.BUFFER_SIZE) ? 
-								(block.size - totalRead) : Constant.BUFFER_SIZE));
-				System.out.println("read " + read);
-				dos.write(buf, 0, read);
-				totalRead += read;
-			}
-			dos.close();
-			
-			GZIPInputStream gis = new GZIPInputStream(new FileInputStream(gzipPartFile));
-			File orgPartFile = new File(Constant.TMP_DIR + "/" + block.hash);
-			FileOutputStream fout = new FileOutputStream(orgPartFile);
-			while ((read = gis.read(buf, 0, Constant.BUFFER_SIZE)) != -1)
-			{
-				fout.write(buf, 0, read);
-			}
-			fout.flush();
-			gis.close();
-			fout.close();
-			gzipPartFile.delete();
-			block.finished = true;
-		}
-		catch (JSONException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : JSONException");
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask download : IOException");
-		}
-	}
-	
-	protected void close()
-	{
-		try
-		{
-			cos.close();
-			cis.close();
-			channel.close();
-		}
-		catch (IOException e)
-		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask close : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask close : IOException");
-		}
-	}
-	
-	Runnable ackListenRunnable = new Runnable()
-	{
+		System.out.println("Upload start!");
 		
-		@Override
-		public void run()
+		File file = new File(filename);
+		RandomAccessFile dis = new RandomAccessFile(file, "r");
+		byte [] buf = new byte[Constant.BUFFER_SIZE];
+		ByteBuffer bf = ByteBuffer.allocate(Constant.BUFFER_SIZE);
+		
+		int blockNum = (int) Math.ceil((double) transferSize 
+						/ (Constant.K_NUM * Constant.SYMBOL_SIZE));
+		
+		ArrayList<CodingRawData> codingBlocks = new ArrayList<CodingRawData>();
+		int lo = 0, hi = 0;
+		int sendSize = 0;
+		for (int i = 0; i < blockNum; i ++)
 		{
-			while (!finished)
-			{
-				synchronized (cis)
+			int size = 4;
+			bf.clear();
+			if ((i == blockNum - 1) 
+					|| (i == blockNum - 2 && transferSize - sendSize < Constant.K_NUM * Constant.MIN_SYMBOL_SIZE))
+			{//if the last block is too small, merge it here
+				hi = transferBlocks.size();
+				bf.putInt(hi - lo);
+				for (int j = lo; j < hi; j ++)
 				{
-					try
+					Block block = transferBlocks.get(j);
+					bf.putInt(block.blockSeq);
+					bf.putInt((int) block.size);
+					dis.seek(block.offset);
+					int read = dis.read(buf, 0, (int) block.size);
+					
+					if (read != block.size)
 					{
-						String rcvStr = cis.readLine();
-						
-						Log.d(Constant.LOG_LEVEL_DEBUG, "receive : " + rcvStr);
-						
-						JSONObject info = new JSONObject(rcvStr);
-						String type = info.getString("type");
-						if (type.equals("ack"))
-						{
-							String filename = info.getString("filename");
-							int seq = info.getInt("seq");
-							ack(filename, seq, true);
-						}
+						System.out.println("Split error! No enough data, upload fail!");
+						dis.close();
+						return;
 					}
-					catch (IOException e)
+					
+
+					bf.put(buf, 0, read);
+					sendSize += read;
+					size += read + 8;
+				}
+
+				raptor.util.Config conf = new raptor.util.Config((int) Math.ceil((double) size / Constant.K_NUM), 
+						Constant.K_NUM, Constant.OVERHEAD);
+				
+				byte [] raw = new byte[size];
+				System.arraycopy(bf.array(), 0, raw, 0, size);
+				codingBlocks.add(new CodingRawData(raw, conf));
+				lo = hi;
+				break;
+			}
+			else
+			{
+				while (hi < transferBlocks.size() && size < Constant.K_NUM * Constant.SYMBOL_SIZE)
+				{
+					size += transferBlocks.get(hi).size + 8;
+					hi ++;
+				}
+				hi --;
+				size -= transferBlocks.get(hi).size + 8;
+				
+				bf.putInt(hi - lo);
+				for (int j = lo; j < hi; j ++)
+				{
+					Block block = transferBlocks.get(j);
+					bf.putInt(block.blockSeq);
+					bf.putInt((int) block.size);
+					dis.seek(block.offset);
+					int read = dis.read(buf, 0, (int) block.size);
+					
+					if (read != block.size)
 					{
-						if (e.getMessage() != null)
-							Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask ackListenRunnable : " + e.getMessage());
-						else
-							Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask ackListenRunnable : IOException");
+						System.out.println("Split error! No enough data, upload fail!");
+						dis.close();
+						return;
 					}
-					catch (JSONException e)
-					{
-						if (e.getMessage() != null)
-							Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask ackListenRunnable : " + e.getMessage());
-						else
-							Log.e(Constant.LOG_LEVEL_ERROR, "at TransferTask ackListenRunnable : JSONException");
-					}
+					
+					bf.put(buf, 0, read);
+					sendSize += read;
+				}
+				
+				raptor.util.Config conf = new raptor.util.Config((int) Math.ceil((double) size / Constant.K_NUM), 
+						Constant.K_NUM, Constant.OVERHEAD);
+				
+				byte [] raw = new byte[size];
+				System.arraycopy(bf.array(), 0, raw, 0, size);
+				codingBlocks.add(new CodingRawData(raw, conf));
+				lo = hi;
+			}
+		}
+		dis.close();
+		
+		codingSend(codingBlocks);
+		System.out.println("Upload finish!");
+	}
+
+	protected void codingSend(ArrayList<CodingRawData> codingBlocks) throws JSONException, IOException
+	{
+		ArrayList<SendingThread> threads = new ArrayList<SendingThread>();
+		int index = 0;
+		while (index < codingBlocks.size())
+		{
+			int encodeThreadCount = 0;
+			for (SendingThread thread : threads)
+			{
+				if (thread.state() <= Constant.CODING_STATE_ENCODE_START)
+				{
+					encodeThreadCount ++;
+				}
+			}
+			
+			if (encodeThreadCount < Constant.CODING_THREAD_COUNT)
+			{
+				JSONObject conf = new JSONObject();
+				conf.put("K", codingBlocks.get(index).conf.K);
+				conf.put("SYMSIZE", codingBlocks.get(index).conf.SYMBOL_SIZE);
+				conf.put("bsize", codingBlocks.get(index).raw.length);
+				
+				cos.println(conf.toString());
+				cos.flush();
+				System.out.println("Send : " + conf.toString());
+				String rcvStr = cis.readLine();
+				System.out.println("Rcv : " + rcvStr);
+				JSONObject reply = new JSONObject(rcvStr);
+				if (reply.getString("action").equals("start"))
+				{//server must reply start
+					int dgport = reply.getInt("port");
+					int ctrPort = reply.getInt("ctrport");
+					Socket ctrSocket = new Socket(Setting.SERVER_IP, ctrPort);
+					System.out.println("create ctr socket ok " + ctrSocket.getLocalPort() + " -> " + ctrPort);
+					
+					SendingThread thread = new SendingThread(codingBlocks.get(index), addr, dgport, index, ctrSocket);
+					thread.start();
+					threads.add(thread);
+					index ++;
+				}
+			}
+			else
+			{
+				try
+				{
+					System.out.println("Goto sleep " + Constant.CODING_THREAD_WAIT_TIME + " ms");
+					Thread.sleep(Constant.CODING_THREAD_WAIT_TIME);
+				}
+				catch (InterruptedException e)
+				{
+					e.printStackTrace();
 				}
 			}
 		}
-	};
+		
+		for (SendingThread thread : threads)
+		{
+			try
+			{
+				thread.join();
+			}
+			catch (InterruptedException e)
+			{
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	ByteBuffer blkBf = ByteBuffer.allocate(Constant.K_NUM * 
+			(Constant.SYMBOL_SIZE + Constant.MIN_SYMBOL_SIZE));
+	protected void download() 
+			throws JSONException, FileNotFoundException, IOException
+	{
+		int bcount = 0;
+		while (0 < downloadBlocks.size())
+		{
+			String rcvStr = cis.readLine();
+			System.out.println("Rcv : " + rcvStr);
+			JSONObject conf = new JSONObject(rcvStr);
+			conf.put("action", "start");
+			
+			cos.println(conf.toString());
+			cos.flush();
+			System.out.println("Send : " + conf.toString());
+			
+			byte [] mixed = decodeOneBlock(dgserver, conf, bcount);
+			if (mixed != null)
+			{
+				blkBf.clear();
+				blkBf.put(mixed);
+				
+				int offset = 0;
+				int blkNum = blkBf.getInt(offset);
+				offset += 4;
+				for (int i = 0; i < blkNum; i ++)
+				{
+					int index = blkBf.getInt(offset);
+					offset += 4;
+					int size = blkBf.getInt(offset);
+					offset += 4;
+					
+					FileOutputStream fout = new FileOutputStream(
+							new File(Constant.TMP_DIR + "/" + allDownloadBlocks.getJSONObject(index).getString("hash")));
+					fout.write(mixed, offset, size);
+					fout.close();
+					
+					downloadBlocks.remove(allDownloadBlocks.getJSONObject(index));
+					
+					offset += size;
+				}
+				
+				JSONObject respon = new JSONObject();
+				respon.put("status", "success");
+				cos.println(respon.toString());
+				cos.flush();
+				System.out.println("Send : " + respon.toString());
+			}
+			else
+			{
+				//TODO decode fail
+			}
+		}
+		
+		merge(filename, allDownloadBlocks);
+	}
+	
+	protected byte [] decodeOneBlock(DatagramSocket dgserver, JSONObject conf, int blockSeq) throws JSONException, IOException
+	{
+		int K = conf.getInt("K");
+		int Pr = (int) (1.25 * K);
+		int SYMSIZE = conf.getInt("SYMSIZE");
+		int bsize = conf.getInt("bsize");
+		
+		byte [][] data = new byte[Pr][SYMSIZE];
+		boolean [] received = new boolean[Pr];
+		for (int i = 0; i < Pr; i ++)
+		{
+			received[i] = false;
+		}
+		
+		byte [] buf = new byte[Constant.PKT_SIZE];
+		
+		long start1 = System.currentTimeMillis();
+		int need = (int) ((Constant.OVERHEAD + 1) * K);
+		System.out.println(need);
+		int count = 0;
+		
+		while (count < need)
+		{
+			pktBf.clear();
+			DatagramPacket pkt = new DatagramPacket(buf, Constant.PKT_SIZE);
+			dgserver.receive(pkt);
+			//TODO client identify?
+			
+			int rcvlen = pkt.getLength();
+			pktBf.put(pkt.getData(), 0, rcvlen);
+			byte [] all = pktBf.array();
+			
+			int offset = 0;
+			int bseq = pktBf.getInt(offset);
+			offset += 4;
+			if (bseq != blockSeq)
+			{//just drop this packet
+				continue;
+			}
+			int symNum = pktBf.getInt(offset);
+			offset += 4;
+			for (int i = 0; i < symNum; i ++)
+			{
+				int index = pktBf.getInt(offset);
+				offset += 4;
+				if (0 <= index && index < Pr)
+				{
+					System.arraycopy(all, offset, data[index], 0, SYMSIZE);
+					received[index] = true;
+				}
+				offset += SYMSIZE;
+			}
+			count += symNum;
+		}
+			
+		System.out.println("Receive time: " + (System.currentTimeMillis() - start1) + " ms");
+		long start2 = System.currentTimeMillis();
+		int [] index = new int[count];
+		int [] index1 = new int[Pr];
+		int pos = 0;
+		for (int i = 0; i < Pr; i ++)
+		{
+			if (received[i])
+			{
+				index1[pos] = i;
+				pos ++;
+			}
+		}
+		for (int i = 0; i < count; i ++)
+		{
+			index[i] = index1[i];
+		}
+		
+		System.out.println("pos = " + pos + ", count = " + count + ", need = " + need);
+		byte [] raw = Receiver.decode(bsize, new Config(SYMSIZE, K, Constant.OVERHEAD), data, index);
+		
+		System.out.println("Decode time: " + (System.currentTimeMillis() - start2) + " ms");
+		return raw;
+	}
+	
+	
+	protected void merge(String filename, JSONArray blocks)
+	{
+		File file = new File(filename);
+		file = new File(Constant.APP_BASE_DIR + "/" + file.getName());
+		try
+		{
+			FileOutputStream fout = new FileOutputStream(file);
+			byte [] buf = new byte[1024 * 1024];
+			
+			for (int i = 0; i < blocks.length(); i ++)
+			{
+				try
+				{
+					JSONObject block = blocks.getJSONObject(i);
+					FileInputStream fin = new FileInputStream(new File(Constant.TMP_DIR + "/" + block.getString("hash")));
+					
+					int read = fin.read(buf, 0, (int) block.getLong("size"));
+					fout.write(buf, 0, read);
+					
+					fin.close();
+				}
+				catch (FileNotFoundException e)
+				{
+					e.printStackTrace();
+				}
+				catch (JSONException e)
+				{
+					e.printStackTrace();
+				}
+				catch (IOException e)
+				{
+					e.printStackTrace();
+				}
+			}
+			
+			fout.close();
+		}
+		catch (FileNotFoundException e1)
+		{
+			e1.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+	}
+		
+	public boolean finished()
+	{
+		return finished;
+	}
+
 }

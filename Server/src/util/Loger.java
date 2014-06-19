@@ -6,6 +6,14 @@ import java.util.Calendar;
 
 import model.Constant;
 
+/**
+ * <p>The logger utility class, log info with different level, and time stamp.</p>
+ * 
+ * <p>author: 	Piasy Xu</p>
+ * <p>date:		14:13 2013/12/15</p>
+ * <p>email:	xz4215@gmail.com</p>
+ * <p>github:	Piasy</p>
+ * */
 public class Loger
 {
 	static PrintStream out;

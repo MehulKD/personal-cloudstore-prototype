@@ -3,12 +3,10 @@ package controller;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
-import model.Block;
 import model.Constant;
 import model.ControlChannel;
 import model.DataChannel;
@@ -50,10 +48,10 @@ public class Controller extends Thread
 	 * Public constructor.
 	 * @param the control channel socket
 	 * */
-	public Controller(Socket controlSocket)
+	public Controller(Socket controlSocket, DBManager dbManager)
 	{
 		this.controlSocket = controlSocket;
-		dbManager = new DBManager();
+		this.dbManager = dbManager;
 	}
 	
 	/**
@@ -73,85 +71,32 @@ public class Controller extends Thread
 	}
 	
 	/**
-	 * The upload transaction.
-	 * It won't be handle here. We just note down that we have
-	 * a upload transaction, and it will be handled in controller's
-	 * own thread or thread of models.
+	 * Add a block into database
 	 * */
-	public void upload(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_UPLOAD;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-	
-	String downloadFileName = null;	//TODO the local absolute path on client of this file, change to queue?
-	/**
-	 * The upload transaction.
-	 * It won't be handle here. We just note down that we have
-	 * a upload transaction, and it will be handled in controller's
-	 * own thread or thread of models.
-	 * */
-	public void download(String filename)
-	{
-		synchronized (requests)
-		{
-			Request download = new Request();
-			download.type = Constant.REQUEST_TYPE_DOWNLOAD;
-			requests.offer(download);
-		}
-	}
-	
-	int tag;
-	/**
-	 * The ack transaction.
-	 * It won't be handle here. We just note down that we have
-	 * a ack transaction, and it will be handled in controller's
-	 * own thread or thread of models.
-	 * */
-	public void ack(long streamSeq)
-	{
-		synchronized (requests)
-		{
-			Request ack = new Request();
-			ack.type = Constant.REQUEST_TYPE_ACK;
-			JSONObject params = new JSONObject();
-			try
-			{
-				params.put("streamSeq", streamSeq);
-				requests.offer(ack);
-			}
-			catch (JSONException e)
-			{
-				Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "controller ack");
-			}
-		}
-	}
-	
-	public void updateFile(ArrayList<Block> blocks, String filename)
-	{
-		dbManager.updateFile(blocks, filename, username);
-	}
-	
 	public void addBlock(JSONObject block, String filename)
 	{
 		dbManager.addBlock(block, filename, username);
 	}
-	
+
+	/**
+	 * Add a file into database
+	 * */
 	public void addFile(JSONObject params)
 	{
 		dbManager.addFile(params, username);
 	}
-	
+
+	/**
+	 * Add a block into a file
+	 * */
 	public void addBlockToFile(JSONObject block, String filename)
 	{
 		dbManager.addBlockToFile(block, filename, username);
 	}
-	
+
+	/**
+     * Query whether there is a block existing in the database
+     * */
 	public boolean hasBlock(String hash)
 	{
 		return dbManager.hasBlock(hash);
@@ -165,12 +110,10 @@ public class Controller extends Thread
 	{
 		this.username = username;
 	}
-	
-	public String getUserName()
-	{
-		return username;
-	}
-	
+
+    /**
+     * Get info of one file
+     * */
 	public JSONObject getFileInfo(String filename)
 	{
 		return dbManager.getFileInfo(filename, username);
@@ -203,7 +146,7 @@ public class Controller extends Thread
 			dataChannel = new DataChannel(dataSocket, this);
 			dataChannel.start();
 			controlChannel = new ControlChannel(controlSocket, this, dataSocket.getLocalPort());
-			if (!controlChannel.init() || !dbManager.init())
+			if (!controlChannel.init())
 			{
 				Loger.Log(Constant.LOG_LEVEL_ERROR, "Control channel init fail!", "controller for " + username);
 				return;
@@ -215,6 +158,7 @@ public class Controller extends Thread
 		{
 			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "controller run");
 		}
+		
 		
 		while(keepRuning)
 		{
@@ -241,21 +185,6 @@ public class Controller extends Thread
 							}
 							queryResponse.put("content", content);
 							controlChannel.sendResponse(queryResponse);
-							break;
-						case Constant.REQUEST_TYPE_UPLOAD:
-							
-							break;	
-						case Constant.REQUEST_TYPE_DOWNLOAD:
-							
-							break;
-						case Constant.REQUEST_TYPE_UPDATE_UP:
-							
-							break;
-						case Constant.REQUEST_TYPE_UPDATE_DOWN:
-							
-							break;
-						case Constant.REQUEST_TYPE_ACK:
-							
 							break;
 						default:
 							break;

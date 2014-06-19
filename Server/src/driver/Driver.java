@@ -8,6 +8,7 @@ import model.Constant;
 import model.Setting;
 import util.Loger;
 import controller.Controller;
+import dao.DBManager;
 
 /**
  * <p>This class is the begin point of the server program,
@@ -31,22 +32,25 @@ public class Driver
 		try
 		{
 			ServerSocket server = new ServerSocket(Setting.GATEWAY_PORT);
-			Loger.init(System.out, Constant.LEVEL_DEBUG);
-			
-			//keep listening and accepting clients' connect request.
-			while (keepRunning)
+			Loger.init(System.out, Constant.LEVEL_INFO);
+			DBManager dbManager = new DBManager();
+			if (dbManager.init())
 			{
-				Socket client = server.accept();
-				if (client.getLocalPort() != -1 && client.getPort() != 0)
+				//keep listening and accepting clients' connect request.
+				while (keepRunning)
 				{
-					Loger.Log(Constant.LOG_LEVEL_INFO, "Accept a client at " 
-							+ client.getRemoteSocketAddress().toString(), "Driver accept");
-					Controller controller = new Controller(client);
-					controller.start();
+					Socket client = server.accept();
+					if (client.getLocalPort() != -1 && client.getPort() != 0)
+					{
+						Loger.Log(Constant.LOG_LEVEL_INFO, "Accept a client at " 
+								+ client.getRemoteSocketAddress().toString(), "Driver accept");
+						Controller controller = new Controller(client, dbManager);
+						controller.start();
+					}
 				}
-			}
-			
-			server.close();
+				
+				server.close();
+			}			
 		}
 		catch (IOException e)
 		{

@@ -1,2 +1,0 @@
-1. 关于Hibernate使用：
-需要一个总的配置文件hibernate.cfg.xml来配置Hibernate，指定表的配置文件（mapping），然后对于每种表，需要一个配置文件FileEntry.hbm.xml指明表中内容，后者中，对于真正数据库表名的大小写是不敏感的。每个配置文件需要一个类与之对应，后续对数据库的操作时，发起query时，表名要使用这个类名。

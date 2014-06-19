@@ -45,6 +45,9 @@ public class IndexModel
         }
     }
     
+    /**
+     * Get MD5 hash of a string
+     * */
     public static String getMD5(String str) 
     {
     	MD5.reset();
@@ -106,6 +109,9 @@ public class IndexModel
 	    return digest;
     }
     
+    /**
+     * Apply CDC to a file
+     * */
     public static ArrayList<Block> CDCSplit(File file)
     {
     	return split(file);
@@ -115,7 +121,10 @@ public class IndexModel
 	{
 		return MessageDigest.getInstance("RHF64", new PJLProvider());
 	}
-    
+
+    /**
+     * Get the MD5 of part of a file
+     * */
     public static String getMD5(File file, long offset, long size) 
     {
     	String digest = null;
@@ -148,7 +157,10 @@ public class IndexModel
 	    
 	    return digest;
     }
-	
+
+    /**
+     * Apply CDC to a file
+     * */
     public static ArrayList<Block> split(File file)
     {
     	ArrayList<Block> blocks = new ArrayList<Block>();
@@ -179,14 +191,6 @@ public class IndexModel
 					{
 						blocks.add(new Block(file.getAbsolutePath(), size, offset, blocks.size(), 
 								getMD5(file, offset, size)));
-//						if (size == Constant.MAX_BLOCK_SIZE)
-//						{
-//							maxSizeBlockNum ++;
-//						}
-//						else if (size == Constant.MIN_BLOCK_SIZE)
-//						{
-//							minSizeBlockNum ++;
-//						}
 						
 						offset = pos + Constant.CDC_WINDOW_SIZE;
 						pos = offset;
@@ -279,14 +283,6 @@ public class IndexModel
 				size = file.length() - offset;
 				blocks.add(new Block(file.getAbsolutePath(), size, offset, blocks.size(), 
 						getMD5(file, offset, size)));
-//				if (size == Constant.MAX_BLOCK_SIZE)
-//				{
-//					maxSizeBlockNum ++;
-//				}
-//				else if (size == Constant.MIN_BLOCK_SIZE)
-//				{
-//					minSizeBlockNum ++;
-//				}
 			}
 		}
 		catch (FileNotFoundException e)

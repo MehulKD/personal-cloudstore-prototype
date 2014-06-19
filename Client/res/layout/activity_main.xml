@@ -32,13 +32,22 @@
                     android:id="@+id/uploadButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="上传" />
+                    android:text="Upload" />
 
                 <Button
-                    android:id="@+id/pureUploadButton"
+                    android:id="@+id/codingUploadButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="纯（上传+下载）验证" />
+                    android:text="Coding" 
+                    android:visibility="invisible"/>
+
+                <Button
+                    android:id="@+id/staticSplitTest"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Static"
+                    android:visibility="invisible" />
+
             </LinearLayout>
 
             <LinearLayout
@@ -49,12 +58,14 @@
                     android:id="@+id/updateUpButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="增量同步上传" />
+                    android:text="增量同步上传" 
+                    android:visibility="invisible"/>
                 <Button
                     android:id="@+id/updateUpValidButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="增量上传验证" />
+                    android:text="增量上传验证"
+                    android:visibility="invisible" />
 
             </LinearLayout>
 
@@ -66,13 +77,22 @@
                     android:id="@+id/validateButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="（上传+下载）验证" />
+                    android:text="Dynamic" 
+                    android:visibility="invisible"/>
 
                 <Button
                     android:id="@+id/networkInfo"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="网络状况" />
+                    android:text="网络状况"
+                    android:visibility="invisible" />
+
+                <Button
+                    android:id="@+id/splitButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="切块"
+                    android:visibility="invisible" />
 
             </LinearLayout>
 
@@ -84,7 +104,8 @@
                     android:id="@+id/uploadModify"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="上传同时修改" />
+                    android:text="上传同时修改" 
+                    android:visibility="invisible"/>
 
             </LinearLayout>
 
@@ -94,7 +115,8 @@
             android:id="@+id/netinfoText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="网络状况" />
+            android:text="网络状况" 
+                    android:visibility="invisible"/>
 		
     </LinearLayout>
 

@@ -2,7 +2,7 @@ package dao;
 
 /**
  * <p>The DAO entry class, the entry of table 'files'.
- * It has 4 field, id(primary key), owner, path, and digest.</p>
+ * It has 5 field, id(primary key), filename, size, blockNum, owner.</p>
  * 
  * <p>author: 	Piasy Xu</p>
  * <p>date:		14:13 2013/12/15</p>
@@ -18,7 +18,7 @@ public class FileEntry
 	public String owner;
 	
 	/**
-	 * Another public constructor.
+	 * Public constructor.
 	 * */
 	public FileEntry(String filename, long size, int blockNum, String owner)
 	{
@@ -29,7 +29,7 @@ public class FileEntry
 	}
 	
 	/**
-	 * Another public constructor.
+	 * Another public constructor with id filed.
 	 * */
 	public FileEntry(long id, String filename, long size, int blockNum, String owner)
 	{

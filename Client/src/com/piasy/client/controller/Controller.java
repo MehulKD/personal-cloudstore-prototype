@@ -5,17 +5,15 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Queue;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.content.Context;
 import android.os.Handler;
 import android.os.Message;
-import android.util.Log;
 import android.widget.Toast;
 
-import com.piasy.client.dao.DBManager;
+import com.piasy.client.model.Config;
 import com.piasy.client.model.Constant;
 import com.piasy.client.model.ControlChannel;
 import com.piasy.client.model.Request;
@@ -74,7 +72,6 @@ public class Controller
 	String username = null;
 	Handler viewerHandler = null;
 	Thread controllerThread = null;
-	DBManager dbManager = null;
 	Queue<Request> requests = new LinkedList<Request>();
 	/**
 	 * Initialize the necessary modules of this application, including
@@ -86,11 +83,10 @@ public class Controller
 	 * the database manager,
 	 * the name of this user
 	 * */
-	public boolean init(Handler viewerHandler, DBManager dbManager, String username)
+	public boolean init(Handler viewerHandler, String username)
 	{
 		boolean ret = true;
 		this.username = username;
-		this.dbManager = dbManager;
 		this.viewerHandler = viewerHandler;
 		
 		File cloudDir = new File(Constant.APP_BASE_DIR);
@@ -104,72 +100,6 @@ public class Controller
 		{
 			controllerThread = new Thread(controllerRunnable);
 			controllerThread.start();
-			
-			if (this.dbManager != null && !this.dbManager.dbIsOpen())
-			{
-				this.dbManager.openDB();
-			}
-			
-			
-//			List<BlockEntry> entries = dbManager.queryFromBlocks();
-//			//TO-DO for each filename, only re-request once...
-//			ArrayList<BlockEntry> reTransferBlocks = new ArrayList<BlockEntry>();
-//			for (int i = 0; i < entries.size(); i ++)
-//			{
-//				BlockEntry entry = entries.get(i);
-//				boolean unacked = (entry.tag == Constant.BLOCK_UPLOAD_UNACKED) ||
-//							   (entry.tag == Constant.BLOCK_DOWNLOAD_UNACKED) ||
-//							   (entry.tag == Constant.BLOCK_UPDATE_UP_UNACKED) ||
-//							   (entry.tag == Constant.BLOCK_UPDATE_DOWN_UNACKED);
-//				if (unacked)
-//				{
-//					boolean exist = false;
-//					int j = 0;
-//					for (j = 0; j < reTransferBlocks.size(); j ++)
-//					{
-//						if (entry.filename.equals(reTransferBlocks.get(j).filename))
-//						{
-//							exist = true;
-//							break;
-//						}
-//					}
-//					
-//					if (!exist)
-//					{
-//						reTransferBlocks.add(entry);
-//					}
-//					else
-//					{
-//						if (entry.tag < reTransferBlocks.get(j).tag)
-//						{
-//							reTransferBlocks.set(j, entry);
-//						}
-//					}
-//				}
-//			}
-//			
-//			for (int i = 0; i < reTransferBlocks.size(); i ++)
-//			{
-//				BlockEntry entry = reTransferBlocks.get(i);
-//				
-//				switch ((int) entry.status)
-//				{
-//				case Constant.BLOCK_UPLOAD_UNACKED:
-//					upload(entry.filename, entry.offset);
-//					break;
-//				case Constant.BLOCK_DOWNLOAD_UNACKED:
-//					//TODO keep download again
-//					break;
-//				case Constant.BLOCK_UPDATE_UP_UNACKED:
-//					//TODO keep update up again
-//					break;
-//				case Constant.BLOCK_UPDATE_DOWN_UNACKED:
-//					//TODO keep update down again
-//					break;
-//				default:
-//					break;
-//				}
-//			}
 		}
 		return ret;
 	}
@@ -184,7 +114,6 @@ public class Controller
 	{
 		synchronized (requests)
 		{
-			dbManager.closeDB();
 			Request exit = new Request();
 			exit.type = Constant.REQUEST_TYPE_EXIT;
 			requests.offer(exit);
@@ -200,15 +129,6 @@ public class Controller
 		return username;
 	}
 	
-	/**
-	 * Get the reference of database manager. To do something on
-	 * database.
-	 * @return the reference of database manager.
-	 * */
-	public DBManager getDbManager()
-	{
-		return dbManager;
-	}
 	
 	/**
 	 * The query method, just note down that the user has made
@@ -225,6 +145,7 @@ public class Controller
 		}
 	}
 	
+	
 	/**
 	 * The upload method, just note down that the user has made
 	 * a upload request, and save the file(s) name to be sent,
@@ -235,11 +156,7 @@ public class Controller
 	 * method one by one.
 	 * @param params : upload params
 	 * {
-	 * "files" : [
-	 * 				{
-	 * 				"filename" : filename
-	 * 				} ...
-	 * 		     ]
+	 * "filename" : filename
 	 * }
 	 * */
 	public void upload(JSONObject params)
@@ -248,61 +165,6 @@ public class Controller
 		{
 			Request upload = new Request();
 			upload.type = Constant.REQUEST_TYPE_UPLOAD;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-
-	public void pureUpload(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_PURE_UPLOAD;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-	
-	public void pureDownload(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_PURE_DOWNLOAD;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-	
-	public void updateUp(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_UPDATE_UP;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-	
-	public void updateUpFast(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_UPDATE_UP_FAST;
-			upload.params = params;
-			requests.offer(upload);
-		}
-	}
-	
-	public void updateDown(JSONObject params)
-	{
-		synchronized (requests)
-		{
-			Request upload = new Request();
-			upload.type = Constant.REQUEST_TYPE_UPDATE_DOWN;
 			upload.params = params;
 			requests.offer(upload);
 		}
@@ -350,10 +212,7 @@ public class Controller
 		}
 		catch (JSONException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at controller parseResponse : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at controller parseResponse : JSONException");
+			e.printStackTrace();
 		}
 	}
 	
@@ -391,14 +250,9 @@ public class Controller
 			switch (mode)
 			{
 			case Constant.TRANSFER_MODE_DOWNLOAD:
-			case Constant.TRANSFER_MODE_UPDATE_DOWN:
-			case Constant.TRANSFER_MODE_PURE_DOWNLOAD:
 				info.put("type", "download");
 				break;
 			case Constant.TRANSFER_MODE_UPLOAD:
-			case Constant.TRANSFER_MODE_UPDATE_UP:
-			case Constant.TRANSFER_MODE_PURE_UPLOAD:
-			case Constant.TRANSFER_MODE_UPDATE_UP_FAST:
 				info.put("type", "upload");
 				break;
 			default:
@@ -408,7 +262,7 @@ public class Controller
 			info.put("status", "success");
 			Message msg = Message.obtain();
 			msg.obj = info.toString();
-			Log.d(Constant.LOG_LEVEL_DEBUG, info.toString());
+			System.out.println("Controller.transferFileFinish() " + info.toString());
 			synchronized (viewerHandler)
 			{
 				viewerHandler.sendMessage(msg);
@@ -416,10 +270,7 @@ public class Controller
 		}
 		catch (JSONException e)
 		{
-			if (e.getMessage() != null)
-				Log.e(Constant.LOG_LEVEL_ERROR, "at controller transferFileFinish : " + e.getMessage());
-			else
-				Log.e(Constant.LOG_LEVEL_ERROR, "at controller transferFileFinish : JSONException");
+			e.printStackTrace();
 		}
 	}
 	
@@ -502,22 +353,10 @@ public class Controller
 							break;
 						case Constant.REQUEST_TYPE_UPLOAD:
 						case Constant.REQUEST_TYPE_DOWNLOAD:
-						case Constant.REQUEST_TYPE_PURE_DOWNLOAD:
-						case Constant.REQUEST_TYPE_UPDATE_UP:
-						case Constant.REQUEST_TYPE_UPDATE_DOWN:
-						case Constant.REQUEST_TYPE_PURE_UPLOAD:
-						case Constant.REQUEST_TYPE_UPDATE_UP_FAST:
 							try
 							{
-								ArrayList<String> files = new ArrayList<String>();
-								JSONArray filesInfo = request.params.getJSONArray("files");
-								for (int i = 0; i < filesInfo.length(); i ++)
-								{
-									files.add(filesInfo.getJSONObject(i).getString("filename"));
-								}
-								//TODO split files into more tasks
 								TransferTask task = new TransferTask(request.type, 
-										files, false, dataport);
+										request.params.getString("filename"), dataport);
 								synchronized (runningTasks)
 								{
 									if (runningTasks.size() < Constant.CHANNEL_POOL_SIZE)
@@ -536,10 +375,7 @@ public class Controller
 							}
 							catch (JSONException e)
 							{
-								if (e.getMessage() != null)
-									Log.e(Constant.LOG_LEVEL_ERROR, "at controller run : " + e.getMessage());
-								else
-									Log.e(Constant.LOG_LEVEL_ERROR, "at controller run : JSONException");
+								e.printStackTrace();
 							}
 							break;
 						case Constant.REQUEST_TYPE_EXIT:
@@ -555,6 +391,14 @@ public class Controller
 		}
 	};
 		
+	public Config getConf(long size)
+	{
+		//TODO init index model according to
+		//network speed and split time/efficiency
+		return new Config(Constant.CDC_MAGIC, Constant.CDC_MASK, 
+				Constant.MIN_BLOCK_SIZE, Constant.MAX_BLOCK_SIZE, Constant.SLID_WINDOW_STEP);
+	}
+	
 	private Controller()
 	{
 	}

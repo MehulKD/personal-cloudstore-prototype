@@ -200,46 +200,9 @@ public class ControlChannel
 			}
 			else
 			{
-				if (type.equals("upload"))
-				{
-					request.remove("type");
-					myController.upload(request);
-				}
-				else
-				{
-					if (type.equals("download"))
-					{
-						myController.download(request.getString("filename"));
-					}
-					else
-					{
-						if (type.equals("update"))
-						{
-							
-						}
-						else
-						{
-							if (type.equals("exit"))
-							{
-								keepListening = false;
-								is.close();
-								os.close();
-								controlSocket.close();
-								myController.exit();
-							}
-							else
-							{
-							}
-						}
-					}
-				}
 			}
 		}
 		catch (JSONException e)
-		{
-			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "ControlChannel parseMessage " + localPort);
-		}
-		catch (IOException e)
 		{
 			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "ControlChannel parseMessage " + localPort);
 		}

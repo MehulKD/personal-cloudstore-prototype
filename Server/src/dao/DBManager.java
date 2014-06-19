@@ -9,15 +9,25 @@ import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import model.Block;
+import model.Constant;
+import model.IndexModel;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import model.Block;
-import model.Constant;
-import model.IndexModel;
 import util.Loger;
 
+/**
+ * <p>The DAO database manager class, encapsulate the sql statement with
+ * a little bit safe method.</p>
+ * 
+ * <p>author: 	Piasy Xu</p>
+ * <p>date:		14:13 2013/12/15</p>
+ * <p>email:	xz4215@gmail.com</p>
+ * <p>github:	Piasy</p>
+ * */
 public class DBManager
 {
 	String url = "jdbc:mysql://localhost/dropboxappdata";
@@ -27,6 +37,9 @@ public class DBManager
     Statement stmt;
     
     Timer keepAliveTimer = new Timer();
+    /**
+     * To keep mysql connection alive
+     * */
     TimerTask keepAliveTask = new TimerTask()
 	{
 		
@@ -39,14 +52,7 @@ public class DBManager
 				String sql = "SELECT COUNT(*) FROM blocks WHERE hash = 'a67e553cf7481c39980a659ae6e175ba'";
 				try
 				{
-					ResultSet rst = stmt.executeQuery(sql);
-					if (rst.next())
-					{
-						int rowCount = rst.getInt("rowCount");
-						Loger.Log(Constant.LOG_LEVEL_INFO, 
-								"Keep connection alive, there are " + rowCount + " users", 
-								"DBManager keepAliveTask");
-					}
+					stmt.executeQuery(sql);
 				}
 				catch (SQLException e)
 				{
@@ -57,6 +63,9 @@ public class DBManager
 		}
 	};
     
+	/**
+	 * Get a statement to execute a sql
+	 * */
 	protected Statement getStatement()
     {
     	Statement stmt = null;
@@ -77,6 +86,9 @@ public class DBManager
     	return stmt;
     }
 	
+	/**
+	 * Initialize the database manager
+	 * */
     public boolean init()
     {
     	boolean ret = false;
@@ -117,6 +129,9 @@ public class DBManager
     	return ret;
     }
     
+    /**
+     * Filt the sql keyword in params
+     * */
     protected String prepare(String param, int type)
     {
     	StringBuffer sb = new StringBuffer();
@@ -151,11 +166,17 @@ public class DBManager
     	return sb.toString();
     }
     
+    /**
+     * Get the hashed table name from a user
+     * */
     protected String getTableName(String filename, String owner)
     {
     	return IndexModel.getMD5(owner + "#$%$#" + filename);
     }
     
+    /**
+     * Get all files of a user
+     * */
     public ArrayList<FileEntry> getAllFiles(String owner)
     {
     	ArrayList<FileEntry> ret = new ArrayList<FileEntry>();
@@ -181,6 +202,9 @@ public class DBManager
     	return ret;
     }
     
+    /**
+     * Get info of one file
+     * */
     public JSONObject getFileInfo(String filename, String owner)
     {
     	JSONObject fileInfo = new JSONObject();
@@ -193,15 +217,19 @@ public class DBManager
 				fileInfo.put("filename", filename);
 				ResultSet rse = stmt.executeQuery(sql);
 				JSONArray blocksInfo = new JSONArray();
+				long filesize = 0;
 				while (rse.next())
 				{
 					JSONObject blockInfo = new JSONObject();
 					blockInfo.put("hash", rse.getString("hash"));
-					blockInfo.put("size", rse.getLong("size"));
+					long blocksize = rse.getLong("size");
+					blockInfo.put("size", blocksize);
+					filesize += blocksize;
 					blockInfo.put("seq", rse.getInt("blockseq"));
 					blocksInfo.put(blockInfo);
 				}
 				fileInfo.put("blocks", blocksInfo);
+				fileInfo.put("size", filesize);
 			}
 			catch (SQLException | JSONException e)
 			{
@@ -211,6 +239,9 @@ public class DBManager
     	return fileInfo;
     }
     
+    /**
+     * Query whether there is a block existing in the database
+     * */
     public boolean hasBlock(String hash)
     {
     	boolean ret = false;
@@ -234,6 +265,9 @@ public class DBManager
     	return ret;
     }
     
+    /**
+     * Add a file into the database
+     * */
     public boolean addFile(JSONObject params, String owner)
     {
     	boolean ret = false;
@@ -263,6 +297,9 @@ public class DBManager
     	return ret;
     }
     
+    /**
+     * Add one block to its original file
+     * */
     public boolean addBlockToFile(JSONObject block, String filename, String owner)
     {
     	boolean ret = false;
@@ -284,13 +321,20 @@ public class DBManager
 				ret = true;
     		}
 		}
-		catch (JSONException | SQLException e)
+		catch (JSONException e)
+		{
+			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "DBManager addBlockToFile");
+		}
+		catch (SQLException e)
 		{
 			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "DBManager addBlockToFile");
 		}
     	return ret;
     }
     
+    /**
+     * Query whether there is a block in one file
+     * */
     protected boolean hasBlockInFile(String hash, String filename, String owner)
     {
     	boolean ret = false;
@@ -317,6 +361,9 @@ public class DBManager
     	return ret;
     }
     
+    /**
+     * Add one block into the database, its original file, too.
+     * */
     public boolean addBlock(JSONObject block, String filename, String owner)
     {
     	boolean ret = false;
@@ -338,13 +385,20 @@ public class DBManager
     			}
     		}
 		}
-		catch (JSONException | SQLException e)
+		catch (JSONException e)
+		{
+			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "DBManager addBlock");
+		}
+		catch (SQLException e)
 		{
 			Loger.Log(Constant.LOG_LEVEL_ERROR, e.getMessage(), "DBManager addBlock");
 		}
     	return ret;
     }
     
+    /**
+     * Update blocks info of one file
+     * */
     public boolean updateFile(ArrayList<Block> blocks, String filename, String owner)
     {
     	boolean ret = false;
